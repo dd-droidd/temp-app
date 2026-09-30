@@ -779,7 +779,57 @@ export default function App() {
           </div>
         </div>
       )}
+{showThermometerModal && (
+  <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
+    <div className="bg-white rounded-[2.5rem] max-w-2xl w-full p-8 shadow-2xl text-center relative">
+      
+      <button
+        onClick={() => setShowThermometerModal(false)}
+        className="absolute top-4 right-4 text-slate-400 bg-slate-100 w-10 h-10 rounded-full font-bold"
+      >
+        X
+      </button>
 
+      <div className="text-5xl mb-4">🌡️</div>
+
+      <h2 className="text-3xl font-black text-slate-800 mb-6">
+        탐침 온도계 사용법
+      </h2>
+
+      <div className="space-y-4 text-left">
+
+        <div className="p-4 bg-slate-50 rounded-2xl">
+          <b>🔘 ON/OFF</b>
+          <p>전원을 켜고 끄는 버튼이에요.</p>
+        </div>
+
+        <div className="p-4 bg-slate-50 rounded-2xl">
+          <b>🌡️ °C/°F</b>
+          <p>반드시 섭씨(°C)로 맞춰서 측정해 주세요.</p>
+        </div>
+
+        <div className="p-4 bg-slate-50 rounded-2xl">
+          <b>📌 HOLD</b>
+          <p>현재 온도를 화면에 고정해서 편하게 기록할 수 있어요.</p>
+        </div>
+
+        <div className="p-4 bg-yellow-50 rounded-2xl">
+          <b>☝️ 측정할 때</b>
+          <p>탐침을 물속에 넣고 온도가 안정될 때까지 기다려 주세요.</p>
+        </div>
+
+      </div>
+
+      <button
+        onClick={() => setShowThermometerModal(false)}
+        className="mt-6 bg-yellow-400 text-white px-10 py-4 rounded-full font-black text-lg"
+      >
+        확인했어요! 👍
+      </button>
+
+    </div>
+  </div>
+)}
       {showGuideModal && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-[2.5rem] max-w-2xl w-full p-8 md:p-10 shadow-2xl border-8 border-rose-100 text-center relative animate-fade-in-up max-h-[90vh] overflow-y-auto">
