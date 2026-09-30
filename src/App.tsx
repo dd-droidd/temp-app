@@ -25,12 +25,13 @@ ChartJS.register(
 );
 
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT_ID.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyCin-PWOGR9Yb4w7eKgWTh5JGY7CvhLWSg",
+  authDomain: "science-t.firebaseapp.com",
+  projectId: "science-t",
+  storageBucket: "science-t.firebasestorage.app",
+  messagingSenderId: "46317460386",
+  appId: "1:46317460386:web:671a52f2c1f3674fffb0fb",
+  measurementId: "G-SW1463773V"
 };
 
 const APP_ID = 'cute-science-temp-app';
