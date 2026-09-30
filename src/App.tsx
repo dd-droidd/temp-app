@@ -260,6 +260,7 @@ export default function App() {
   const dbRef = useRef(null);
 
   const [showGuideModal, setShowGuideModal] = useState(true); // 처음 시작 시 안전 수칙 모달 표시
+  const [showThermometerModal, setShowThermometerModal] = useState(false);
   const [isSafetyChecked, setIsSafetyChecked] = useState(false); // 안전 수칙 동의 체크박스 상태
   const [showRoleModal, setShowRoleModal] = useState(false); 
   const [selectedRoleGroup, setSelectedRoleGroup] = useState('1'); 
@@ -554,7 +555,7 @@ export default function App() {
               <span className="text-xl">👥</span> 모둠 역할 설정
             </button>
             <button 
-              onClick={() => { setPendingTimerGroup(null); setShowGuideModal(true); }}
+              onClick={() => setShowThermometerModal(true)}
               className="bg-yellow-100 text-yellow-800 hover:bg-yellow-200 px-6 py-4 rounded-3xl inline-flex items-center gap-2 text-sm md:text-base font-extrabold shadow-md border-b-4 border-yellow-300 active:translate-y-1 active:border-b-0 transition-all"
             >
               <span className="text-xl">📖</span> 탐침 온도계 사용법
