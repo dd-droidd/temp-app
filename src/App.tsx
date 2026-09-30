@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";
-import { getFirestore, doc, setDoc, collection, onSnapshot, Firestore } from "firebase/firestore";
+import { getFirestore, doc, setDoc, collection, onSnapshot } from "firebase/firestore";
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -24,40 +24,13 @@ ChartJS.register(
   Legend
 );
 
-// 타입 정의
-interface GroupMember {
-  name: string;
-  role: string;
-}
-
-interface GroupData {
-  name: string;
-  hotWater: string[];
-  coldWater: string[];
-  timerStartTime: number | null;
-  members: GroupMember[];
-  quizCompleted?: boolean;
-}
-
-interface LocalTimer {
-  elapsed: number;
-  lastDingTime: number;
-}
-
-interface GroupChartProps {
-  hotData: string[];
-  coldData: string[];
-  groupName: string;
-}
-
 const firebaseConfig = {
-  apiKey: "AIzaSyBFiFsAlQ8YO7ylk-B_Vl9Bi3V0kfGhCoQ",
-  authDomain: "science-class-b5853.firebaseapp.com",
-  projectId: "science-class-b5853",
-  storageBucket: "science-class-b5853.firebasestorage.app",
-  messagingSenderId: "319773019145",
-  appId: "1:319773019145:web:896963d65028610d117cd8",
-  measurementId: "G-8DXFLWGM3F"
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_SENDER_ID",
+  appId: "YOUR_APP_ID"
 };
 
 const APP_ID = 'cute-science-temp-app';
@@ -65,6 +38,33 @@ const COLLECTION_NAME = 'temperature-data';
 const NUM_GROUPS = 6;
 const TIME_LABELS = ['처음', '30초', '1분', '2분', '3분', '4분', '5분', '6분', '7분', '8분'];
 const TARGET_TIMES = [30, 60, 120, 180, 240, 300, 360, 420, 480];
+
+const STORAGE_KEY = `${APP_ID}-local-state-v2`;
+
+const createInitialGroup = (i) => ({
+  name: `${i}모둠`,
+  hotWater: Array(10).fill(''),
+  coldWater: Array(10).fill(''),
+  timerStartTime: null,
+  members: [
+    { name: '', role: '기록자' },
+    { name: '', role: '온도측정자' },
+    { name: '', role: '온도측정자' },
+    { name: '', role: '시간확인자' }
+  ]
+});
+
+const createInitialState = () => {
+  const data = {};
+  const timers = {};
+  const quiz = {};
+  for (let i = 1; i <= NUM_GROUPS; i++) {
+    data[i] = createInitialGroup(i);
+    timers[i] = { elapsed: 0, lastDingTime: -1 };
+    quiz[i] = false;
+  }
+  return { data, timers, quiz };
+};
 
 const GROUP_STYLES = [
   { icon: '🐶', color: 'bg-rose-100', borderColor: 'border-rose-300', textColor: 'text-rose-800' },
@@ -75,13 +75,12 @@ const GROUP_STYLES = [
   { icon: '🐹', color: 'bg-violet-100', borderColor: 'border-violet-300', textColor: 'text-violet-800' },
 ];
 
-let globalAudioCtx: AudioContext | null = null;
+let globalAudioCtx = null;
 
 const playDing = (type = 'ding', silent = false) => {
   try {
     if (!globalAudioCtx) {
-      const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      globalAudioCtx = new AudioContextClass();
+      globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
     }
     if (globalAudioCtx.state === 'suspended') globalAudioCtx.resume();
     if (silent) return; 
@@ -113,13 +112,13 @@ const playDing = (type = 'ding', silent = false) => {
   } catch (e) {}
 };
 
-const GroupChart: React.FC<GroupChartProps> = ({ hotData, coldData, groupName }) => {
+const GroupChart = ({ hotData, coldData, groupName }) => {
   const options = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        position: 'top' as const,
+        position: 'top',
         labels: {
             usePointStyle: true, 
             pointStyle: 'circle',
@@ -128,7 +127,7 @@ const GroupChart: React.FC<GroupChartProps> = ({ hotData, coldData, groupName })
             color: '#333',       
             font: {
                 family: "'Pretendard', 'Noto Sans KR', sans-serif",
-                weight: 'bold' as const,
+                weight: 'bold',
                 size: 13
             },
             padding: 20          
@@ -140,7 +139,7 @@ const GroupChart: React.FC<GroupChartProps> = ({ hotData, coldData, groupName })
         color: '#333',
         font: {
             size: 18,
-            weight: 'bold' as const,
+            weight: '900',
             family: "'Pretendard', 'Noto Sans KR', sans-serif"
         },
         padding: {
@@ -166,14 +165,14 @@ const GroupChart: React.FC<GroupChartProps> = ({ hotData, coldData, groupName })
             display: true,
             text: '온도 (℃)',
             color: '#64748b',
-            font: { family: "'Pretendard', 'Noto Sans KR', sans-serif", weight: 'bold' as const },
-            align: 'end' as const
+            font: { family: "'Pretendard', 'Noto Sans KR', sans-serif", weight: 'bold' },
+            align: 'end'
         },
         min: 0,
         max: 100, 
         ticks: {
             color: '#64748b',
-            font: { family: "'Pretendard', 'Noto Sans KR', sans-serif", weight: 'bold' as const },
+            font: { family: "'Pretendard', 'Noto Sans KR', sans-serif", weight: 'bold' },
             stepSize: 10
         },
         grid: {
@@ -190,12 +189,12 @@ const GroupChart: React.FC<GroupChartProps> = ({ hotData, coldData, groupName })
             display: true,
             text: '시간', 
             color: '#64748b',
-            font: { family: "'Pretendard', 'Noto Sans KR', sans-serif", weight: 'bold' as const },
-            align: 'end' as const
+            font: { family: "'Pretendard', 'Noto Sans KR', sans-serif", weight: 'bold' },
+            align: 'end'
         },
         ticks: {
             color: '#64748b',
-            font: { family: "'Pretendard', 'Noto Sans KR', sans-serif", weight: 'bold' as const }
+            font: { family: "'Pretendard', 'Noto Sans KR', sans-serif", weight: 'bold' }
         },
         grid: {
             color: '#f1f5f9',
@@ -217,7 +216,7 @@ const GroupChart: React.FC<GroupChartProps> = ({ hotData, coldData, groupName })
     datasets: [
       {
         label: '따뜻한 물',
-        data: hotData.map(v => (v === '' || isNaN(Number(v)) ? null : Number(v))),
+        data: hotData.map(v => (v === '' || isNaN(v) ? null : Number(v))),
         borderColor: '#ef4444', 
         backgroundColor: '#ef4444', 
         borderWidth: 3,         
@@ -230,7 +229,7 @@ const GroupChart: React.FC<GroupChartProps> = ({ hotData, coldData, groupName })
       },
       {
         label: '차가운 물',
-        data: coldData.map(v => (v === '' || isNaN(Number(v)) ? null : Number(v))),
+        data: coldData.map(v => (v === '' || isNaN(v) ? null : Number(v))),
         borderColor: '#3b82f6', 
         backgroundColor: '#3b82f6', 
         borderWidth: 3,         
@@ -252,49 +251,55 @@ const GroupChart: React.FC<GroupChartProps> = ({ hotData, coldData, groupName })
 };
 
 export default function App() {
-  const [groupData, setGroupData] = useState<Record<string, GroupData>>({});
-  const [localTimers, setLocalTimers] = useState<Record<string, LocalTimer>>({});
-  const [quizState, setQuizState] = useState<Record<string, boolean>>({});
-  const groupDataRef = useRef<Record<string, GroupData>>({}); 
+  const [groupData, setGroupData] = useState({});
+  const [localTimers, setLocalTimers] = useState({});
+  const [quizState, setQuizState] = useState({});
+  const groupDataRef = useRef({}); 
   const [isConnected, setIsConnected] = useState(false);
-  const dbRef = useRef<Firestore | null>(null);
+  const dbRef = useRef(null);
 
-  const [showGuideModal, setShowGuideModal] = useState(true);
-  const [isSafetyChecked, setIsSafetyChecked] = useState(false);
+  const [showGuideModal, setShowGuideModal] = useState(true); // 처음 시작 시 안전 수칙 모달 표시
+  const [isSafetyChecked, setIsSafetyChecked] = useState(false); // 안전 수칙 동의 체크박스 상태
   const [showRoleModal, setShowRoleModal] = useState(false); 
   const [selectedRoleGroup, setSelectedRoleGroup] = useState('1'); 
   const [hasAgreedSafety, setHasAgreedSafety] = useState(false);
-  const [activeQuizGroup, setActiveQuizGroup] = useState<string | null>(null);
+  const [activeQuizGroup, setActiveQuizGroup] = useState(null);
   const [quizAnswers, setQuizAnswers] = useState({ ans1: '', ans2: '' });
   const [quizFeedback, setQuizFeedback] = useState('');
-  const [pendingTimerGroup, setPendingTimerGroup] = useState<string | null>(null);
+  const [pendingTimerGroup, setPendingTimerGroup] = useState(null);
 
   useEffect(() => {
-    const initialData: Record<string, GroupData> = {};
-    const initialTimers: Record<string, LocalTimer> = {};
-    const initialQuiz: Record<string, boolean> = {};
-    
-    for (let i = 1; i <= NUM_GROUPS; i++) {
-      const key = i.toString();
-      initialData[key] = {
-        name: `${i}모둠`,
-        hotWater: Array(10).fill(''),
-        coldWater: Array(10).fill(''),
-        timerStartTime: null,
-        members: [
-          { name: '', role: '기록자' },
-          { name: '', role: '온도측정자' },
-          { name: '', role: '온도측정자' },
-          { name: '', role: '시간확인자' }
-        ]
-      };
-      initialTimers[key] = { elapsed: 0, lastDingTime: -1 };
-      initialQuiz[key] = false;
+    const initial = createInitialState();
+    let restored = false;
+
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        if (saved?.data) {
+          const mergedData = { ...initial.data, ...saved.data };
+          Object.keys(mergedData).forEach(id => {
+            mergedData[id] = { ...createInitialGroup(Number(id)), ...mergedData[id] };
+            if (!Array.isArray(mergedData[id].hotWater)) mergedData[id].hotWater = Array(10).fill('');
+            if (!Array.isArray(mergedData[id].coldWater)) mergedData[id].coldWater = Array(10).fill('');
+            if (!Array.isArray(mergedData[id].members)) mergedData[id].members = createInitialGroup(Number(id)).members;
+          });
+          setGroupData(mergedData);
+          groupDataRef.current = mergedData;
+          restored = true;
+        }
+        if (saved?.quiz) setQuizState({ ...initial.quiz, ...saved.quiz });
+      }
+    } catch (e) {}
+
+    if (!restored) {
+      setGroupData(initial.data);
+      groupDataRef.current = initial.data;
     }
-    setGroupData(initialData);
-    groupDataRef.current = initialData;
-    setLocalTimers(initialTimers);
-    setQuizState(initialQuiz);
+    setLocalTimers(initial.timers);
+    if (!restored) setQuizState(initial.quiz);
+
+    if (firebaseConfig.apiKey === "YOUR_API_KEY") return;
 
     try {
       const app = initializeApp(firebaseConfig);
@@ -302,23 +307,29 @@ export default function App() {
       const db = getFirestore(app);
       dbRef.current = db;
 
+      let unsubscribe = null;
       signInAnonymously(auth).then(() => {
         setIsConnected(true);
         const collRef = collection(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME);
-        onSnapshot(collRef, (snapshot) => {
+        unsubscribe = onSnapshot(collRef, (snapshot) => {
           const newData = { ...groupDataRef.current };
+          const nextQuiz = {};
           snapshot.docs.forEach(docSnap => {
             const id = docSnap.id;
-            const data = docSnap.data() as Partial<GroupData>;
-            newData[id] = { ...newData[id], ...data };
-            if (data.quizCompleted) {
-              setQuizState(prev => ({...prev, [id]: true}));
-            }
+            const incoming = docSnap.data();
+            newData[id] = { ...createInitialGroup(Number(id)), ...newData[id], ...incoming };
+            nextQuiz[id] = !!incoming.quizCompleted;
           });
           setGroupData(newData);
           groupDataRef.current = newData;
+          setQuizState(prev => ({ ...prev, ...nextQuiz }));
+          try {
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ data: newData, quiz: { ...quizState, ...nextQuiz } }));
+          } catch (e) {}
         });
       }).catch(() => {});
+
+      return () => { if (unsubscribe) unsubscribe(); };
     } catch (e) {}
   }, []);
 
@@ -340,6 +351,21 @@ export default function App() {
 
             newTimers[groupId].elapsed = diff;
 
+            if (diff >= 480 && newTimers[groupId].lastDingTime !== 480) {
+              newTimers[groupId].lastDingTime = 480;
+              setTimeout(() => {
+                const latest = groupDataRef.current[groupId];
+                if (latest?.timerStartTime) {
+                  const stopped = { ...latest, timerStartTime: null };
+                  const nextAll = { ...groupDataRef.current, [groupId]: stopped };
+                  groupDataRef.current = nextAll;
+                  setGroupData(nextAll);
+                  persistGroup(groupId, { timerStartTime: null });
+                  playDing('tada');
+                }
+              }, 0);
+            }
+
             if (TARGET_TIMES.includes(diff) && newTimers[groupId].lastDingTime !== diff) {
               shouldPlaySound = true;
               newTimers[groupId].lastDingTime = diff;
@@ -358,7 +384,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const isInputUnlocked = (groupId: string, index: number): boolean => {
+  const isInputUnlocked = (groupId, index) => {
     const data = groupData[groupId];
     const local = localTimers[groupId] || { elapsed: 0 };
     if (index === 0) return true; 
@@ -367,7 +393,7 @@ export default function App() {
     return local.elapsed >= unlockTime;
   };
 
-  const isAllDataFilled = (groupId: string): boolean => {
+  const isAllDataFilled = (groupId) => {
     const data = groupData[groupId];
     if (!data) return false;
     const hotFilled = data.hotWater.every(val => val !== '');
@@ -375,50 +401,63 @@ export default function App() {
     return hotFilled && coldFilled;
   };
 
-  const handleInputChange = async (groupId: string, type: 'name' | 'hotWater' | 'coldWater', index: number | null, value: string) => {
-    const updatedGroupData = { ...groupData };
-    if (type === 'name') {
-      updatedGroupData[groupId].name = value;
-    } else if (index !== null) {
-      updatedGroupData[groupId][type][index] = value;
-    }
-    
-    setGroupData(updatedGroupData);
-    groupDataRef.current = updatedGroupData;
+  const persistGroup = async (groupId, groupValue, extra = {}) => {
+    try {
+      const next = { ...groupDataRef.current[groupId], ...groupValue };
+      const nextAll = { ...groupDataRef.current, [groupId]: next };
+      groupDataRef.current = nextAll;
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ data: nextAll, quiz: quizState })
+      );
+    } catch (e) {}
 
     if (isConnected && dbRef.current) {
       try {
-        const docRef = doc(dbRef.current, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, groupId);
-        await setDoc(docRef, updatedGroupData[groupId], { merge: true });
+        const docRef = doc(dbRef.current, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, groupId.toString());
+        await setDoc(docRef, { ...groupValue, ...extra }, { merge: true });
       } catch(e) {}
     }
   };
 
-  const startRealTimer = async (groupId: string, isTimerRunning: boolean) => {
+  const handleInputChange = async (groupId, type, index, value) => {
+    const current = groupDataRef.current[groupId] || createInitialGroup(Number(groupId));
+    const nextGroup = {
+      ...current,
+      hotWater: [...(current.hotWater || Array(10).fill(''))],
+      coldWater: [...(current.coldWater || Array(10).fill(''))],
+      members: (current.members || createInitialGroup(Number(groupId)).members).map(member => ({ ...member }))
+    };
+
+    if (type === 'name') {
+      nextGroup.name = value;
+    } else {
+      nextGroup[type][index] = value;
+    }
+
+    const updatedGroupData = { ...groupDataRef.current, [groupId]: nextGroup };
+    setGroupData(updatedGroupData);
+    groupDataRef.current = updatedGroupData;
+    await persistGroup(groupId, nextGroup);
+  };
+
+  const startRealTimer = async (groupId, isTimerRunning) => {
     try {
-      if (!globalAudioCtx) {
-        const AudioContextClass = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        globalAudioCtx = new AudioContextClass();
-      }
+      if (!globalAudioCtx) globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (globalAudioCtx.state === 'suspended') globalAudioCtx.resume();
     } catch(e) {}
 
+    const current = groupDataRef.current[groupId] || createInitialGroup(Number(groupId));
     const newTime = isTimerRunning ? null : Date.now();
-    const updatedGroupData = { ...groupData };
-    updatedGroupData[groupId].timerStartTime = newTime;
-    
+    const nextGroup = { ...current, timerStartTime: newTime };
+    const updatedGroupData = { ...groupDataRef.current, [groupId]: nextGroup };
+
     setGroupData(updatedGroupData);
     groupDataRef.current = updatedGroupData;
-
-    if (isConnected && dbRef.current) {
-      try {
-        const docRef = doc(dbRef.current, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, groupId);
-        await setDoc(docRef, { timerStartTime: newTime }, { merge: true });
-      } catch(e) {}
-    }
+    await persistGroup(groupId, { timerStartTime: newTime });
   };
 
-  const toggleTimer = (groupId: string) => {
+  const toggleTimer = (groupId) => {
     const data = groupData[groupId];
     const isTimerRunning = !!data.timerStartTime;
 
@@ -437,23 +476,27 @@ export default function App() {
     setShowRoleModal(true);
   };
 
-  const handleMemberRoleChange = (memberIdx: number, field: keyof GroupMember, value: string) => {
-    const updatedData = { ...groupData };
-    if (!updatedData[selectedRoleGroup]) return;
-    if (!updatedData[selectedRoleGroup].members) {
-      updatedData[selectedRoleGroup].members = [
-        { name: '', role: '기록자' },
-        { name: '', role: '온도측정자' },
-        { name: '', role: '온도측정자' },
-        { name: '', role: '시간확인자' }
-      ];
-    }
-    updatedData[selectedRoleGroup].members[memberIdx][field] = value;
+  const handleMemberRoleChange = async (memberIdx, field, value) => {
+    const groupId = selectedRoleGroup;
+    const current = groupDataRef.current[groupId] || createInitialGroup(Number(groupId));
+    const members = (current.members || createInitialGroup(Number(groupId)).members).map(member => ({ ...member }));
+    members[memberIdx] = { ...members[memberIdx], [field]: value };
+
+    const nextGroup = { ...current, members };
+    const updatedData = { ...groupDataRef.current, [groupId]: nextGroup };
     setGroupData(updatedData);
     groupDataRef.current = updatedData;
+    await persistGroup(groupId, { members });
   };
 
   const handleRoleSetupComplete = () => {
+    if (!hasAgreedSafety) {
+      setPendingTimerGroup(pendingTimerGroup || selectedRoleGroup);
+      setShowRoleModal(false);
+      setShowGuideModal(true);
+      return;
+    }
+
     setShowRoleModal(false);
     if (pendingTimerGroup) {
       startRealTimer(pendingTimerGroup, false);
@@ -462,15 +505,23 @@ export default function App() {
   };
 
   const handleQuizSubmit = async () => {
-    if (!activeQuizGroup) return;
     if (quizAnswers.ans1 === '높은' && quizAnswers.ans2 === '낮은') {
       playDing('tada');
-      setQuizFeedback('정답입니다! 🎉 열은 온도가 높은 곳에서 낮은 곳으로 이동합니다.');
-      setQuizState(prev => ({ ...prev, [activeQuizGroup]: true }));
+      setQuizFeedback('정답입니다! 🎉 heat moves from higher to lower temperature.');
+      setQuizState(prev => {
+        const nextQuiz = { ...prev, [activeQuizGroup]: true };
+        try {
+          window.localStorage.setItem(
+            STORAGE_KEY,
+            JSON.stringify({ data: groupDataRef.current, quiz: nextQuiz })
+          );
+        } catch (e) {}
+        return nextQuiz;
+      });
       
       if (isConnected && dbRef.current) {
         try {
-          const docRef = doc(dbRef.current, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, activeQuizGroup);
+          const docRef = doc(dbRef.current, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, activeQuizGroup.toString());
           await setDoc(docRef, { quizCompleted: true }, { merge: true });
         } catch(e) {}
       }
@@ -514,8 +565,7 @@ export default function App() {
           {Object.entries(groupData).map(([groupId, data]) => {
             const local = localTimers[groupId] || { elapsed: 0 };
             const isTimerRunning = !!data.timerStartTime;
-            const groupIdx = parseInt(groupId, 10);
-            const style = GROUP_STYLES[(groupIdx - 1) % GROUP_STYLES.length];
+            const style = GROUP_STYLES[(groupId - 1) % GROUP_STYLES.length];
             const allFilled = isAllDataFilled(groupId);
             const isQuizDone = quizState[groupId];
 
@@ -639,6 +689,7 @@ export default function App() {
                   </div>
                 )}
 
+                {}
                 <div className="p-5 bg-slate-50 border-t border-slate-100 flex flex-col items-center w-full">
                   <GroupChart hotData={data.hotWater} coldData={data.coldWater} groupName={data.name} />
                 </div>
@@ -776,6 +827,7 @@ export default function App() {
                 </div>
             </div>
 
+            {}
             <div className="flex flex-col items-center gap-4 mb-2">
               <label className="flex items-center gap-3 cursor-pointer group">
                 <input 
@@ -799,12 +851,13 @@ export default function App() {
         </div>
       )}
 
-      {activeQuizGroup && groupData[activeQuizGroup] && (
+      {activeQuizGroup && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-[2.5rem] max-w-2xl w-full p-8 md:p-10 shadow-2xl border-8 border-white text-center relative animate-fade-in-up">
             <h2 className="text-3xl font-black text-slate-800 mb-2">마무리 결론 퀴즈 🎯</h2>
             <p className="text-slate-500 font-bold mb-6">우리 모둠이 만든 그래프를 보고 빈칸을 채워보세요!</p>
             
+            {}
             <div className="flex justify-center mb-8 w-full">
               <GroupChart 
                 hotData={groupData[activeQuizGroup].hotWater} 
