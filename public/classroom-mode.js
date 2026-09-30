@@ -16,7 +16,7 @@
     document.querySelectorAll('input').forEach(input => {
       const value = (input.value || '').trim();
       if (!/^[1-6]모둠$/.test(value)) return;
-      const card = input.closest('div.rounded-[2rem]') || input.parentElement?.parentElement?.parentElement?.parentElement;
+      const card = input.closest('.overflow-hidden');
       if (card && !found.includes(card)) found.push(card);
     });
     return found;
