@@ -16,8 +16,23 @@
     document.querySelectorAll('input').forEach(input => {
       const value = (input.value || '').trim();
       if (!/^[1-6]모둠$/.test(value)) return;
-      const card = input.closest('.overflow-hidden');
-      if (card && !found.includes(card)) found.push(card);
+
+      let node = input.parentElement;
+      let depth = 0;
+      while (node && depth < 12) {
+        const hasTable = !!node.querySelector('table');
+        const hasTimerButton = Array.from(node.querySelectorAll('button')).some(btn => {
+          const text = (btn.textContent || '').trim();
+          return text.includes('시작') || text.includes('정지');
+        });
+
+        if (hasTable && hasTimerButton) {
+          if (!found.includes(node)) found.push(node);
+          break;
+        }
+        node = node.parentElement;
+        depth += 1;
+      }
     });
     return found;
   }
