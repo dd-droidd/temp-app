@@ -170,11 +170,11 @@ const GroupChart = ({ hotData, coldData, groupName }) => {
             align: 'end'
         },
         min: 0,
-        max: 100, 
+        max: 70, 
         ticks: {
             color: '#64748b',
             font: { family: "'Pretendard', 'Noto Sans KR', sans-serif", weight: 'bold' },
-            stepSize: 10
+            stepSize: 5
         },
         grid: {
             color: '#f1f5f9', 
