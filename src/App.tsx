@@ -173,12 +173,16 @@ const GroupChart = ({ hotData, coldData, groupName }) => {
         max: 70, 
         ticks: {
             color: '#64748b',
-            font: { family: "'Pretendard', 'Noto Sans KR', sans-serif", weight: 'bold' },
+            font: {
+    family: "'Pretendard', 'Noto Sans KR', sans-serif",
+    weight: 'bold',
+    size: 10
+},
             stepSize: 5
         },
         grid: {
             color: '#f1f5f9', 
-            lineWidth: 1.5
+            lineWidth: 1
         },
         border: {
             display: true,
@@ -245,7 +249,7 @@ const GroupChart = ({ hotData, coldData, groupName }) => {
   };
 
   return (
-    <div className="w-full h-[300px] bg-white rounded-2xl p-4 border border-slate-200 relative shadow-sm">
+    <div className="w-full h-[330px] bg-white rounded-2xl p-4 border border-slate-200 relative shadow-sm">
       <Line options={options} data={data} />
     </div>
   );
