@@ -20,13 +20,15 @@
       let node = input.parentElement;
       let depth = 0;
       while (node && depth < 12) {
-        const hasTable = !!node.querySelector('table');
-        const hasTimerButton = Array.from(node.querySelectorAll('button')).some(btn => {
+        const tables = node.querySelectorAll('table');
+        const timerButtons = Array.from(node.querySelectorAll('button')).filter(btn => {
           const text = (btn.textContent || '').trim();
           return text.includes('시작') || text.includes('정지');
         });
 
-        if (hasTable && hasTimerButton) {
+        // 데스크톱에서는 6개 카드를 감싸는 바깥 영역까지 올라가면
+        // 표와 버튼이 여러 개가 됩니다. 표 1개인 영역만 개별 모둠 카드로 사용합니다.
+        if (tables.length === 1 && timerButtons.length >= 1) {
           if (!found.includes(node)) found.push(node);
           break;
         }
@@ -39,7 +41,8 @@
 
   function applyStudentView() {
     if (state.mode !== 'student') return;
-    groupCards().forEach(card => {
+    const cards = groupCards();
+    cards.forEach(card => {
       const input = card.querySelector('input');
       const id = input ? (input.value || '').trim().replace('모둠','') : '';
       card.style.display = id === state.group ? '' : 'none';
