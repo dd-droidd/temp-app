@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from "firebase/app";
-import { getAuth, signInAnonymously, signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
 import { getFirestore, doc, setDoc, collection, onSnapshot } from "firebase/firestore";
 import {
   Chart as ChartJS,
@@ -58,6 +58,10 @@ const SESSION_ID = normalizeSessionId(
   (typeof window !== 'undefined' && window.__SCIENCE_SESSION_ID__) ||
   'DEFAULT'
 );
+
+// Firebase 이메일/비밀번호 인증은 최소 6자 이상의 비밀번호가 필요합니다.
+// 이 수업용 앱은 사용 편의를 위해 별도의 4자리 선생님 PIN을 사용합니다.
+const TEACHER_PIN = '2468';
 
 const STORAGE_KEY = `${APP_ID}-${SESSION_ID}-local-state-v3`;
 
@@ -293,8 +297,7 @@ export default function App() {
   const [isTeacherAuthenticated, setIsTeacherAuthenticated] = useState(false);
   const [teacherLoginReady, setTeacherLoginReady] = useState(false);
   const [showTeacherLogin, setShowTeacherLogin] = useState(isTeacherMode);
-  const [teacherEmail, setTeacherEmail] = useState('');
-  const [teacherPassword, setTeacherPassword] = useState('');
+  const [teacherPin, setTeacherPin] = useState('');
   const [teacherAuthError, setTeacherAuthError] = useState('');
   const [isTeacherSigningIn, setIsTeacherSigningIn] = useState(false);
   const dbRef = useRef(null);
@@ -347,7 +350,7 @@ export default function App() {
     if (!restored) setQuizState(initial.quiz);
 
     if (firebaseConfig.apiKey === "YOUR_API_KEY") {
-      setTeacherLoginReady(!isTeacherMode);
+      setTeacherLoginReady(true);
       return;
     }
 
@@ -360,31 +363,6 @@ export default function App() {
 
       let unsubscribeSnapshot = null;
       let unsubscribeAuth = null;
-
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-        const teacher = !!user && !user.isAnonymous;
-        setIsTeacherAuthenticated(teacher);
-        setTeacherLoginReady(true);
-
-        if (isTeacherMode) {
-          if (teacher) {
-            setShowTeacherLogin(false);
-            setIsConnected(true);
-          } else {
-            setShowTeacherLogin(true);
-            setIsConnected(false);
-          }
-          return;
-        }
-
-        if (!user) {
-          try {
-            await signInAnonymously(auth);
-          } catch (e) {}
-        } else {
-          setIsConnected(true);
-        }
-      });
 
       const startSnapshot = () => {
         if (unsubscribeSnapshot) return;
@@ -408,32 +386,32 @@ export default function App() {
         });
       };
 
-      const snapshotWaiter = onAuthStateChanged(auth, (user) => {
-        if (user && (!isTeacherMode || !user.isAnonymous)) {
+      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+        setTeacherLoginReady(true);
+
+        if (user) {
           startSnapshot();
+        } else {
+          try {
+            await signInAnonymously(auth);
+          } catch (e) {}
         }
       });
 
       return () => {
         if (unsubscribeSnapshot) unsubscribeSnapshot();
         if (unsubscribeAuth) unsubscribeAuth();
-        snapshotWaiter();
       };
     } catch (e) {
       setTeacherLoginReady(true);
     }
-  }, [isTeacherMode]);
+  }, []);
 
   const handleTeacherLogin = async (event) => {
     event?.preventDefault();
-    if (!authRef.current) {
-      setTeacherAuthError('Firebase 인증 준비가 아직 끝나지 않았습니다.');
-      return;
-    }
 
-    const email = teacherEmail.trim();
-    if (!email || !teacherPassword) {
-      setTeacherAuthError('선생님 계정 이메일과 비밀번호를 입력해 주세요.');
+    if (!/^\\d{4}$/.test(teacherPin)) {
+      setTeacherAuthError('선생님 비밀번호는 숫자 4자리로 입력해 주세요.');
       return;
     }
 
@@ -441,18 +419,15 @@ export default function App() {
     setTeacherAuthError('');
 
     try {
-      await signInWithEmailAndPassword(authRef.current, email, teacherPassword);
-      setTeacherPassword('');
+      if (teacherPin !== TEACHER_PIN) {
+        throw new Error('INVALID_PIN');
+      }
+
+      setIsTeacherAuthenticated(true);
       setShowTeacherLogin(false);
+      setTeacherPin('');
     } catch (e) {
-      const code = e?.code || '';
-      const messages = {
-        'auth/invalid-credential': '이메일 또는 비밀번호가 올바르지 않습니다.',
-        'auth/invalid-email': '이메일 형식을 확인해 주세요.',
-        'auth/operation-not-allowed': 'Firebase에서 이메일/비밀번호 로그인이 아직 켜지지 않았습니다.',
-        'auth/too-many-requests': '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.'
-      };
-      setTeacherAuthError(messages[code] || '선생님 로그인에 실패했습니다. Firebase 설정을 확인해 주세요.');
+      setTeacherAuthError('비밀번호가 올바르지 않습니다.');
     } finally {
       setIsTeacherSigningIn(false);
     }
@@ -927,27 +902,22 @@ export default function App() {
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[80] flex items-center justify-center p-4">
           <div className="bg-white rounded-[2.5rem] max-w-md w-full p-8 md:p-10 shadow-2xl border-8 border-indigo-100 text-center">
             <div className="text-5xl mb-4">👩‍🏫</div>
-            <h2 className="text-2xl md:text-3xl font-black text-slate-800 mb-2">선생님 로그인</h2>
+            <h2 className="text-2xl md:text-3xl font-black text-slate-800 mb-2">선생님 인증</h2>
             <p className="text-slate-500 font-bold mb-6 leading-relaxed">
-              선생님 화면과 모둠 기록 초기화 기능을 사용하려면<br />선생님 계정으로 로그인해 주세요.
+              선생님 화면을 사용하려면<br /><span className="text-indigo-600">숫자 4자리 비밀번호</span>를 입력해 주세요.
             </p>
 
-            <form onSubmit={handleTeacherLogin} className="space-y-3 text-left">
-              <input
-                type="email"
-                value={teacherEmail}
-                onChange={e => setTeacherEmail(e.target.value)}
-                placeholder="선생님 이메일"
-                autoComplete="username"
-                className="w-full bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 font-bold outline-none focus:border-indigo-400"
-              />
+            <form onSubmit={handleTeacherLogin} className="space-y-3">
               <input
                 type="password"
-                value={teacherPassword}
-                onChange={e => setTeacherPassword(e.target.value)}
-                placeholder="비밀번호"
-                autoComplete="current-password"
-                className="w-full bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 font-bold outline-none focus:border-indigo-400"
+                value={teacherPin}
+                onChange={e => setTeacherPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="● ● ● ●"
+                inputMode="numeric"
+                pattern="[0-9]{4}"
+                maxLength={4}
+                autoFocus
+                className="w-full text-center tracking-[0.7em] text-3xl bg-white border-2 border-slate-200 rounded-2xl px-4 py-4 font-black outline-none focus:border-indigo-400"
               />
 
               {teacherAuthError && (
@@ -958,15 +928,15 @@ export default function App() {
 
               <button
                 type="submit"
-                disabled={isTeacherSigningIn}
+                disabled={isTeacherSigningIn || teacherPin.length !== 4}
                 className="w-full bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-300 text-white px-6 py-3.5 rounded-full font-black text-lg shadow-md"
               >
-                {isTeacherSigningIn ? '로그인 중...' : '선생님으로 로그인 🔐'}
+                {isTeacherSigningIn ? '확인 중...' : '선생님 화면 열기 🔐'}
               </button>
             </form>
 
             <p className="mt-5 text-xs text-slate-400 font-bold">
-              학생 기기는 로그인 없이 학생 화면으로 사용할 수 있습니다.
+              학생 기기는 학생 화면을 선택하면 비밀번호 없이 사용할 수 있습니다.
             </p>
           </div>
         </div>
