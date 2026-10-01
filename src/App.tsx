@@ -267,6 +267,7 @@ export default function App() {
   const [studentGroup, setStudentGroup] = useState('1');
   const [chooserMode, setChooserMode] = useState('');
   const [chooserSession, setChooserSession] = useState('');
+  const [activeSession, setActiveSession] = useState('');
   const [teacherPin, setTeacherPin] = useState('');
   const [teacherAuthError, setTeacherAuthError] = useState('');
   const [isTeacherAuthenticated, setIsTeacherAuthenticated] = useState(false);
@@ -560,6 +561,52 @@ export default function App() {
     setShowResetModal(true);
   };
 
+  const startSelectedMode = () => {
+    const session = normalizeSessionId(chooserSession);
+    if (!session || session === 'DEFAULT') {
+      setTeacherAuthError('수업 코드를 입력해 주세요.');
+      return;
+    }
+
+    if (chooserMode === 'teacher') {
+      if (teacherPin !== TEACHER_PIN) {
+        setTeacherAuthError('선생님 PIN이 올바르지 않습니다.');
+        return;
+      }
+
+      setActiveSession(session);
+      setViewMode('teacher');
+      setIsTeacherAuthenticated(true);
+      setShowGuideModal(false);
+      setTeacherAuthError('');
+      return;
+    }
+
+    if (chooserMode === 'student') {
+      const group = /^[1-6]$/.test(studentGroup) ? studentGroup : '1';
+      setActiveSession(session);
+      setViewMode('student');
+      setStudentGroup(group);
+      setShowGuideModal(true);
+      setTeacherAuthError('');
+    }
+  };
+
+  const openModeChooser = () => {
+    setChooserMode('');
+    setTeacherPin('');
+    setTeacherAuthError('');
+    setChooserSession(activeSession || '');
+    setShowModeChooser(true);
+  };
+
+  const requestReset = (groupId = null) => {
+    if (viewMode !== 'teacher' || !isTeacherAuthenticated) return;
+    setResetTargetGroup(groupId);
+    setResetMessage('');
+    setShowResetModal(true);
+  };
+
   const resetClassroomRecords = async () => {
     if (isResetting) return;
     if (viewMode !== 'teacher' || !isTeacherAuthenticated) return;
@@ -662,6 +709,9 @@ export default function App() {
           {viewMode === 'teacher' ? (
             <div className="flex flex-wrap justify-center items-center gap-3">
               <div className="bg-white text-slate-700 px-5 py-3 rounded-3xl text-sm font-black shadow-md">👩‍🏫 선생님 화면 · 1~6모둠 전체</div>
+              <div className="bg-indigo-50 text-indigo-700 border-2 border-indigo-200 px-5 py-3 rounded-3xl text-sm font-black shadow-sm">
+                🔑 현재 수업 코드: <span className="text-indigo-900">{activeSession || '확인 중'}</span>
+              </div>
               {[1,2,3,4,5,6].map(g => (
                 <button key={g} onClick={() => requestReset(String(g))} className="bg-rose-50 text-rose-700 border-2 border-rose-200 px-3 py-2 rounded-xl text-xs font-black">{g}모둠 초기화</button>
               ))}
