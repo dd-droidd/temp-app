@@ -648,6 +648,11 @@ export default function App() {
   };
 
   const startSelectedMode = async () => {
+    try {
+      if (!globalAudioCtx) globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (globalAudioCtx.state === 'suspended') await globalAudioCtx.resume();
+    } catch (e) {}
+
     const session = normalizeSessionId(chooserSession);
 
     if (!session) {
@@ -787,7 +792,7 @@ export default function App() {
   const handleQuizSubmit = async () => {
     if (quizAnswers.ans1 === '높은' && quizAnswers.ans2 === '낮은') {
       playDing('tada');
-      setQuizFeedback('정답입니다! 🎉 heat moves from higher to lower temperature.');
+      setQuizFeedback('정답입니다! 🎉 열은 높은 온도에서 낮은 온도로 이동합니다.');
       setQuizState(prev => {
         const nextQuiz = { ...prev, [activeQuizGroup]: true };
         try {
@@ -829,6 +834,10 @@ export default function App() {
       <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 p-4 sm:p-6 md:p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-8">
         <header className="text-center relative space-y-6 pt-4">
+          <div className={'inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs md:text-sm font-black shadow-sm border ' + (isConnected ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200')}>
+            <span>{isConnected ? '🟢' : '🟠'}</span>
+            {isConnected ? '실시간 공유 연결됨' : '실시간 공유 연결 안 됨 · 이 기기에서만 저장'}
+          </div>
           <div className="inline-block bg-white px-8 py-4 rounded-full shadow-sm border-2 border-pink-100">
             <h1 className="text-2xl md:text-4xl font-extrabold text-slate-800 tracking-tight flex items-center justify-center gap-3">
               <span className="text-4xl">🌡️</span> 
@@ -890,7 +899,7 @@ export default function App() {
                     </span>
                     <div className="flex items-center gap-2 flex-wrap justify-center">
                       <button
-                        onClick={() => startRealTimer(groupId)}
+                        onClick={() => toggleTimer(groupId)}
                         disabled={isTimerRunning}
                         className="px-4 py-3 rounded-2xl text-sm font-extrabold shadow-md border-b-4 active:translate-y-1 active:border-b-0 transition-all bg-sky-400 text-white border-sky-600 hover:bg-sky-500 disabled:bg-slate-300 disabled:border-slate-400 disabled:cursor-not-allowed"
                       >
