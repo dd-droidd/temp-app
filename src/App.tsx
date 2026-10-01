@@ -713,7 +713,7 @@ export default function App() {
         );
 
         setShowRoleModal(false);
-        setShowGuideModal(true);
+        setShowGuideModal(false);
         setIsSafetyChecked(false);
         setHasAgreedSafety(false);
         setPendingTimerGroup(null);
@@ -754,6 +754,7 @@ export default function App() {
   };
 
   return (
+    <>
       {showModeChooser && (
         <ModeChooser
           mode={chooserMode}
@@ -1260,5 +1261,6 @@ export default function App() {
         }
       `}</style>
     </div>
+    </>
   );
 }
