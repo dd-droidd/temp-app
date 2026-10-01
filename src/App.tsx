@@ -303,7 +303,7 @@ export default function App() {
   const dbRef = useRef(null);
   const authRef = useRef(null);
 
-  const [showGuideModal, setShowGuideModal] = useState(true); // 처음 시작 시 안전 수칙 모달 표시
+  const [showGuideModal, setShowGuideModal] = useState(() => !isTeacherMode); // 학생 화면에서만 안전 수칙 표시
   const [showThermometerModal, setShowThermometerModal] = useState(false);
   const [isSafetyChecked, setIsSafetyChecked] = useState(false); // 안전 수칙 동의 체크박스 상태
   const [showRoleModal, setShowRoleModal] = useState(false); 
@@ -426,6 +426,8 @@ export default function App() {
       setIsTeacherAuthenticated(true);
       setShowTeacherLogin(false);
       setTeacherPin('');
+      setShowGuideModal(false);
+      setShowRoleModal(false);
     } catch (e) {
       setTeacherAuthError('비밀번호가 올바르지 않습니다.');
     } finally {
@@ -435,8 +437,8 @@ export default function App() {
 
   useEffect(() => {
     const handleResetRequest = (event) => {
-      if (!isTeacherAuthenticated) {
-        setResetMessage('초기화 기능은 선생님 로그인 후 사용할 수 있습니다.');
+      if (!isTeacherMode || !isTeacherAuthenticated) {
+        setResetMessage('선생님 화면에서 인증 후 사용할 수 있습니다.');
         return;
       }
       const requestedGroup = event?.detail?.groupId ? String(event.detail.groupId) : null;
@@ -577,7 +579,7 @@ export default function App() {
     const data = groupData[groupId];
     const isTimerRunning = !!data.timerStartTime;
 
-    if (!isTimerRunning && !hasAgreedSafety) {
+    if (!isTimerRunning && !hasAgreedSafety && !isTeacherMode) {
       setPendingTimerGroup(groupId);
       setShowGuideModal(true);
       return;
@@ -623,8 +625,8 @@ export default function App() {
   const resetClassroomRecords = async () => {
     if (isResetting) return;
 
-    if (!isTeacherAuthenticated) {
-      setResetMessage('선생님 로그인 상태에서만 초기화할 수 있습니다.');
+    if (!isTeacherMode || !isTeacherAuthenticated) {
+      setResetMessage('선생님 화면에서 인증 후 사용할 수 있습니다.');
       return;
     }
 
@@ -741,23 +743,25 @@ export default function App() {
             </h1>
           </div>
           
-          <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
-            <div className="bg-white text-slate-700 px-6 py-4 rounded-3xl text-sm md:text-base font-bold shadow-md border-b-4 border-slate-200">
-              💡 모둠별 <strong className="text-blue-500">타이머 시작</strong> 버튼을 누르면 정해진 시간에 띠링! 소리가 나요.
+          {!isTeacherMode && (
+            <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
+              <div className="bg-white text-slate-700 px-6 py-4 rounded-3xl text-sm md:text-base font-bold shadow-md border-b-4 border-slate-200">
+                💡 모둠별 <strong className="text-blue-500">타이머 시작</strong> 버튼을 누르면 정해진 시간에 띠링! 소리가 나요.
+              </div>
+              <button 
+                onClick={() => setShowRoleModal(true)}
+                className="bg-indigo-100 text-indigo-800 hover:bg-indigo-200 px-6 py-4 rounded-3xl inline-flex items-center gap-2 text-sm md:text-base font-extrabold shadow-md border-b-4 border-indigo-300 active:translate-y-1 active:border-b-0 transition-all"
+              >
+                <span className="text-xl">👥</span> 모둠 역할 설정
+              </button>
+              <button 
+                onClick={() => setShowThermometerModal(true)}
+                className="bg-yellow-100 text-yellow-800 hover:bg-yellow-200 px-6 py-4 rounded-3xl inline-flex items-center gap-2 text-sm md:text-base font-extrabold shadow-md border-b-4 border-yellow-300 active:translate-y-1 active:border-b-0 transition-all"
+              >
+                <span className="text-xl">📖</span> 탐침 온도계 사용법
+              </button>
             </div>
-            <button 
-              onClick={() => setShowRoleModal(true)}
-              className="bg-indigo-100 text-indigo-800 hover:bg-indigo-200 px-6 py-4 rounded-3xl inline-flex items-center gap-2 text-sm md:text-base font-extrabold shadow-md border-b-4 border-indigo-300 active:translate-y-1 active:border-b-0 transition-all"
-            >
-              <span className="text-xl">👥</span> 모둠 역할 설정
-            </button>
-            <button 
-              onClick={() => setShowThermometerModal(true)}
-              className="bg-yellow-100 text-yellow-800 hover:bg-yellow-200 px-6 py-4 rounded-3xl inline-flex items-center gap-2 text-sm md:text-base font-extrabold shadow-md border-b-4 border-yellow-300 active:translate-y-1 active:border-b-0 transition-all"
-            >
-              <span className="text-xl">📖</span> 탐침 온도계 사용법
-            </button>
-          </div>
+          )}
         </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
