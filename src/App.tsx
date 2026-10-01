@@ -307,15 +307,7 @@ export default function App() {
     const saved = window.localStorage.getItem('cute-science-temp-app-student-group-v1');
     return /^[1-6]$/.test(saved || '') ? saved : '1';
   });
-  const [showModeChooser, setShowModeChooser] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    const justSelected = window.sessionStorage.getItem('cute-science-temp-app-mode-selected-once-v1') === '1';
-    if (justSelected) {
-      window.sessionStorage.removeItem('cute-science-temp-app-mode-selected-once-v1');
-      return false;
-    }
-    return true;
-  });
+  const [showModeChooser, setShowModeChooser] = useState(true);
   const [chooserMode, setChooserMode] = useState('');
   const [chooserSession, setChooserSession] = useState(() => {
     if (typeof window === 'undefined') return '';
@@ -452,8 +444,10 @@ export default function App() {
       window.localStorage.setItem('cute-science-temp-app-view-mode-v1', 'teacher');
       window.localStorage.setItem(SESSION_STORAGE_KEY, session);
       window.sessionStorage.setItem('cute-science-temp-app-teacher-auth-v1', '1');
-      window.sessionStorage.setItem('cute-science-temp-app-mode-selected-once-v1', '1');
-      window.location.href = window.location.pathname + '?mode=teacher&session=' + encodeURIComponent(session);
+      setViewMode('teacher');
+      setShowModeChooser(false);
+      setShowGuideModal(false);
+      setTeacherAuthError('');
       return;
     }
     if (chooserMode === 'student') {
@@ -462,8 +456,11 @@ export default function App() {
       window.localStorage.setItem('cute-science-temp-app-student-group-v1', group);
       window.localStorage.setItem(SESSION_STORAGE_KEY, session);
       window.sessionStorage.removeItem('cute-science-temp-app-teacher-auth-v1');
-      window.sessionStorage.setItem('cute-science-temp-app-mode-selected-once-v1', '1');
-      window.location.href = window.location.pathname + '?mode=student&session=' + encodeURIComponent(session) + '&group=' + group;
+      setViewMode('student');
+      setStudentGroup(group);
+      setShowModeChooser(false);
+      setShowGuideModal(true);
+      setTeacherAuthError('');
     }
   };
 
@@ -474,6 +471,14 @@ export default function App() {
     setChooserSession(SESSION_ID === 'DEFAULT' ? '' : SESSION_ID);
     setShowModeChooser(true);
   };
+
+  useEffect(() => {
+    // 페이지가 로드될 때마다 시작 화면으로 돌아옵니다.
+    setShowModeChooser(true);
+    setChooserMode('');
+    setTeacherPin('');
+    setTeacherAuthError('');
+  }, []);
 
   const requestReset = (groupId = null) => {
     if (viewMode !== 'teacher' || !isTeacherAuthenticated) return;
