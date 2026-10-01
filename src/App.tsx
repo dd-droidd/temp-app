@@ -612,6 +612,15 @@ export default function App() {
     }
   };
 
+  const makeSessionCode = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return code;
+  };
+
   const startSelectedMode = () => {
     const session = String(chooserSession || '').trim().toUpperCase();
 
@@ -751,7 +760,7 @@ export default function App() {
         onGroupChange={setStudentGroup}
         onPinChange={(v) => { setTeacherPin(v); setTeacherAuthError(''); }}
         onStart={startSelectedMode}
-        makeCode={() => '수업1'}
+        makeCode={makeSessionCode}
       />}
       <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 p-4 sm:p-6 md:p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-8">
