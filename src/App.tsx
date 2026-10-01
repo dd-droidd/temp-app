@@ -41,7 +41,14 @@ const NUM_GROUPS = 6;
 const TIME_LABELS = ['처음', '30초', '1분', '2분', '3분', '4분', '5분', '6분', '7분', '8분'];
 const TARGET_TIMES = [30, 60, 120, 180, 240, 300, 360, 420, 480];
 
-const STORAGE_KEY = `${APP_ID}-local-state-v2`;
+const getStorageKey = (sessionId) =>
+  `${APP_ID}-${normalizeSessionId(sessionId)}-local-state-v3`;
+
+const getGroupCollection = (db, sessionId) =>
+  collection(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, sessionId, 'groups');
+
+const getGroupDoc = (db, sessionId, groupId) =>
+  doc(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, sessionId, 'groups', String(groupId));
 
 const createInitialGroup = (i) => ({
   name: `${i}모둠`,
@@ -290,10 +297,22 @@ export default function App() {
 
   useEffect(() => {
     const initial = createInitialState();
+
+    // 아직 수업 코드가 정해지지 않았다면 빈 화면 대신 기본 1~6모둠 상태만 준비합니다.
+    if (!activeSession) {
+      setGroupData(initial.data);
+      groupDataRef.current = initial.data;
+      setLocalTimers(initial.timers);
+      setQuizState(initial.quiz);
+      setIsConnected(false);
+      return;
+    }
+
     let restored = false;
+    const storageKey = getStorageKey(activeSession);
 
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
+      const raw = window.localStorage.getItem(storageKey);
       if (raw) {
         const saved = JSON.parse(raw);
         if (saved?.data) {
@@ -316,43 +335,62 @@ export default function App() {
     if (!restored) {
       setGroupData(initial.data);
       groupDataRef.current = initial.data;
+      setQuizState(initial.quiz);
     }
     setLocalTimers(initial.timers);
-    if (!restored) setQuizState(initial.quiz);
 
-    if (firebaseConfig.apiKey === "YOUR_API_KEY") return;
+    if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+      setIsConnected(false);
+      return;
+    }
+
+    let unsubscribe = null;
 
     try {
-      const app = initializeApp(firebaseConfig);
+      const app = initializeApp(firebaseConfig, activeSession);
       const auth = getAuth(app);
       const db = getFirestore(app);
       dbRef.current = db;
 
-      let unsubscribe = null;
       signInAnonymously(auth).then(() => {
         setIsConnected(true);
-        const collRef = collection(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME);
+        const collRef = getGroupCollection(db, activeSession);
+
         unsubscribe = onSnapshot(collRef, (snapshot) => {
           const newData = { ...groupDataRef.current };
           const nextQuiz = {};
+
           snapshot.docs.forEach(docSnap => {
             const id = docSnap.id;
             const incoming = docSnap.data();
             newData[id] = { ...createInitialGroup(Number(id)), ...newData[id], ...incoming };
+            if (typeof newData[id].timerElapsed !== 'number') newData[id].timerElapsed = 0;
             nextQuiz[id] = !!incoming.quizCompleted;
           });
+
           setGroupData(newData);
           groupDataRef.current = newData;
           setQuizState(prev => ({ ...prev, ...nextQuiz }));
+
           try {
-            window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ data: newData, quiz: { ...quizState, ...nextQuiz } }));
+            window.localStorage.setItem(
+              storageKey,
+              JSON.stringify({ data: newData, quiz: { ...quizState, ...nextQuiz } })
+            );
           } catch (e) {}
         });
-      }).catch(() => {});
+      }).catch(() => {
+        setIsConnected(false);
+      });
 
-      return () => { if (unsubscribe) unsubscribe(); };
-    } catch (e) {}
-  }, []);
+      return () => {
+        if (unsubscribe) unsubscribe();
+        setIsConnected(false);
+      };
+    } catch (e) {
+      setIsConnected(false);
+    }
+  }, [activeSession]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -428,14 +466,14 @@ export default function App() {
       const nextAll = { ...groupDataRef.current, [groupId]: next };
       groupDataRef.current = nextAll;
       window.localStorage.setItem(
-        STORAGE_KEY,
+        getStorageKey(activeSession),
         JSON.stringify({ data: nextAll, quiz: quizState })
       );
     } catch (e) {}
 
     if (isConnected && dbRef.current) {
       try {
-        const docRef = doc(dbRef.current, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, groupId.toString());
+        const docRef = getGroupDoc(dbRef.current, activeSession, groupId);
         await setDoc(docRef, { ...groupValue, ...extra }, { merge: true });
       } catch(e) {}
     }
@@ -632,7 +670,7 @@ export default function App() {
 
       if (target) {
         const initialGroup = createInitialGroup(Number(target));
-        const docRef = doc(dbRef.current, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, target);
+        const docRef = getGroupDoc(dbRef.current, activeSession, target);
         await setDoc(docRef, { ...initialGroup, quizCompleted: false });
         const nextAll = { ...groupDataRef.current, [target]: initialGroup };
         groupDataRef.current = nextAll;
@@ -645,7 +683,7 @@ export default function App() {
       } else {
         const initial = createInitialState();
         for (let i = 1; i <= NUM_GROUPS; i++) {
-          const docRef = doc(dbRef.current, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, String(i));
+          const docRef = getGroupDoc(dbRef.current, activeSession, i);
           await setDoc(docRef, { ...initial.data[i], quizCompleted: false });
         }
         setGroupData(initial.data);
@@ -673,7 +711,7 @@ export default function App() {
         const nextQuiz = { ...prev, [activeQuizGroup]: true };
         try {
           window.localStorage.setItem(
-            STORAGE_KEY,
+            getStorageKey(activeSession),
             JSON.stringify({ data: groupDataRef.current, quiz: nextQuiz })
           );
         } catch (e) {}
@@ -682,7 +720,7 @@ export default function App() {
       
       if (isConnected && dbRef.current) {
         try {
-          const docRef = doc(dbRef.current, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, activeQuizGroup.toString());
+          const docRef = getGroupDoc(dbRef.current, activeSession, activeQuizGroup);
           await setDoc(docRef, { quizCompleted: true }, { merge: true });
         } catch(e) {}
       }
