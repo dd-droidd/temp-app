@@ -276,6 +276,7 @@ export default function App() {
   const [showResetModal, setShowResetModal] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState('');
+  const [resetTargetGroup, setResetTargetGroup] = useState(null);
 
   useEffect(() => {
     const initial = createInitialState();
@@ -343,7 +344,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const handleResetRequest = () => {
+    const handleResetRequest = (event) => {
+      const requestedGroup = event?.detail?.groupId ? String(event.detail.groupId) : null;
+      setResetTargetGroup(['1','2','3','4','5','6'].includes(requestedGroup) ? requestedGroup : null);
       setResetMessage('');
       setShowResetModal(true);
     };
@@ -523,31 +526,52 @@ export default function App() {
     }
   };
 
-  const resetAllClassroomRecords = async () => {
+  const resetClassroomRecords = async () => {
     if (isResetting) return;
 
     setIsResetting(true);
     setResetMessage('');
 
-    const initial = createInitialState();
+    const target = resetTargetGroup;
 
     try {
-      // 이 기기의 화면도 즉시 초기화합니다.
-      setGroupData(initial.data);
-      groupDataRef.current = initial.data;
-      setLocalTimers(initial.timers);
-      setQuizState(initial.quiz);
-      setActiveQuizGroup(null);
-      setQuizAnswers({ ans1: '', ans2: '' });
-      setQuizFeedback('');
+      if (!isConnected || !dbRef.current) {
+        throw new Error('Firebase 연결이 준비되지 않았습니다.');
+      }
 
-      window.localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({ data: initial.data, quiz: initial.quiz })
-      );
+      if (target) {
+        const groupId = target;
+        const initialGroup = createInitialGroup(Number(groupId));
+        const docRef = doc(
+          dbRef.current,
+          'artifacts',
+          APP_ID,
+          'public',
+          'data',
+          COLLECTION_NAME,
+          groupId
+        );
 
-      // Firebase에 저장된 1~6모둠의 기록도 함께 초기화합니다.
-      if (isConnected && dbRef.current) {
+        await setDoc(docRef, {
+          ...initialGroup,
+          quizCompleted: false
+        });
+
+        const nextAll = { ...groupDataRef.current, [groupId]: initialGroup };
+        groupDataRef.current = nextAll;
+        setGroupData(nextAll);
+        setLocalTimers(prev => ({
+          ...prev,
+          [groupId]: { elapsed: 0, lastDingTime: -1 }
+        }));
+        setQuizState(prev => ({ ...prev, [groupId]: false }));
+
+        setShowResetModal(false);
+        setResetTargetGroup(null);
+        setResetMessage(groupId + '모둠 기록을 초기화했습니다.');
+      } else {
+        const initial = createInitialState();
+
         for (let i = 1; i <= NUM_GROUPS; i++) {
           const docRef = doc(
             dbRef.current,
@@ -564,24 +588,35 @@ export default function App() {
             quizCompleted: false
           });
         }
-      } else {
-        throw new Error('Firebase 연결이 준비되지 않았습니다.');
-      }
 
-      setShowRoleModal(false);
-      setShowGuideModal(true);
-      setIsSafetyChecked(false);
-      setHasAgreedSafety(false);
-      setPendingTimerGroup(null);
-      setShowResetModal(false);
-      setResetMessage('새 반 수업을 시작할 수 있도록 모든 모둠 기록을 초기화했습니다.');
+        setGroupData(initial.data);
+        groupDataRef.current = initial.data;
+        setLocalTimers(initial.timers);
+        setQuizState(initial.quiz);
+        setActiveQuizGroup(null);
+        setQuizAnswers({ ans1: '', ans2: '' });
+        setQuizFeedback('');
+
+        window.localStorage.setItem(
+          STORAGE_KEY,
+          JSON.stringify({ data: initial.data, quiz: initial.quiz })
+        );
+
+        setShowRoleModal(false);
+        setShowGuideModal(true);
+        setIsSafetyChecked(false);
+        setHasAgreedSafety(false);
+        setPendingTimerGroup(null);
+        setShowResetModal(false);
+        setResetTargetGroup(null);
+        setResetMessage('1~6모둠의 모든 기록을 초기화했습니다.');
+      }
     } catch (e) {
       setResetMessage('초기화에 실패했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.');
     } finally {
       setIsResetting(false);
     }
   };
-
   const handleQuizSubmit = async () => {
     if (quizAnswers.ans1 === '높은' && quizAnswers.ans2 === '낮은') {
       playDing('tada');
@@ -785,13 +820,15 @@ export default function App() {
             </div>
 
             <h2 className="text-2xl md:text-3xl font-black text-slate-800 mb-3">
-              학생 기록을 모두 초기화할까요?
+              {resetTargetGroup ? resetTargetGroup + '모둠 기록을 초기화할까요?' : '학생 기록을 모두 초기화할까요?'}
             </h2>
 
             <p className="text-slate-600 font-bold leading-relaxed mb-6">
-              1~6모둠의 온도 기록, 타이머, 역할, 결론 퀴즈 기록이 모두 지워집니다.
+              {resetTargetGroup
+                ? resetTargetGroup + '모둠의 온도 기록, 타이머, 역할, 결론 퀴즈 기록이 지워집니다.'
+                : '1~6모둠의 온도 기록, 타이머, 역할, 결론 퀴즈 기록이 모두 지워집니다.'}
               <br />
-              <span className="text-rose-600">새 반 수업을 시작할 때 사용하세요.</span>
+              <span className="text-rose-600">새로운 모둠 또는 반 수업을 시작할 때 사용하세요.</span>
             </p>
 
             {resetMessage && (
@@ -802,7 +839,7 @@ export default function App() {
 
             <div className="flex flex-col sm:flex-row gap-3 justify-center">
               <button
-                onClick={() => { setShowResetModal(false); setResetMessage(''); }}
+                onClick={() => { setShowResetModal(false); setResetTargetGroup(null); setResetMessage(''); }}
                 disabled={isResetting}
                 className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-7 py-3.5 rounded-full font-black text-lg"
               >
@@ -810,11 +847,11 @@ export default function App() {
               </button>
 
               <button
-                onClick={resetAllClassroomRecords}
+                onClick={resetClassroomRecords}
                 disabled={isResetting}
                 className="bg-rose-500 hover:bg-rose-600 disabled:bg-slate-300 text-white px-7 py-3.5 rounded-full font-black text-lg shadow-md border-b-4 border-rose-700 disabled:border-slate-400"
               >
-                {isResetting ? '초기화 중...' : '정말 초기화하기 🧹'}
+                {isResetting ? '초기화 중...' : (resetTargetGroup ? resetTargetGroup + '모둠 초기화하기 🧹' : '전체 초기화하기 🧹')}
               </button>
             </div>
           </div>
