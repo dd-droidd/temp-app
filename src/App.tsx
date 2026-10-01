@@ -284,6 +284,7 @@ export default function App() {
   const [groupData, setGroupData] = useState({});
   const [localTimers, setLocalTimers] = useState({});
   const [quizState, setQuizState] = useState({});
+  const quizStateRef = useRef({});
   const groupDataRef = useRef({}); 
   const [isConnected, setIsConnected] = useState(false);
   const dbRef = useRef(null);
@@ -314,6 +315,10 @@ export default function App() {
   const [resetTargetGroup, setResetTargetGroup] = useState(null);
 
   useEffect(() => {
+    quizStateRef.current = quizState;
+  }, [quizState]);
+
+  useEffect(() => {
     const initial = createInitialState();
 
     // 아직 수업 코드가 정해지지 않았다면 빈 화면 대신 기본 1~6모둠 상태만 준비합니다.
@@ -328,6 +333,8 @@ export default function App() {
 
     let restored = false;
     const storageKey = getStorageKey(activeSession);
+    setQuizState(initial.quiz);
+    quizStateRef.current = initial.quiz;
 
     try {
       const raw = window.localStorage.getItem(storageKey);
@@ -346,7 +353,11 @@ export default function App() {
           groupDataRef.current = mergedData;
           restored = true;
         }
-        if (saved?.quiz) setQuizState({ ...initial.quiz, ...saved.quiz });
+        if (saved?.quiz) {
+          const restoredQuiz = { ...initial.quiz, ...saved.quiz };
+          quizStateRef.current = restoredQuiz;
+          setQuizState(restoredQuiz);
+        }
       }
     } catch (e) {}
 
@@ -384,17 +395,21 @@ export default function App() {
             const incoming = docSnap.data();
             newData[id] = { ...createInitialGroup(Number(id)), ...newData[id], ...incoming };
             if (typeof newData[id].timerElapsed !== 'number') newData[id].timerElapsed = 0;
-            nextQuiz[id] = !!incoming.quizCompleted;
+            if (Object.prototype.hasOwnProperty.call(incoming, 'quizCompleted')) {
+              nextQuiz[id] = !!incoming.quizCompleted;
+            }
           });
 
           setGroupData(newData);
           groupDataRef.current = newData;
-          setQuizState(prev => ({ ...prev, ...nextQuiz }));
+          const mergedQuiz = { ...quizStateRef.current, ...nextQuiz };
+          quizStateRef.current = mergedQuiz;
+          setQuizState(mergedQuiz);
 
           try {
             window.localStorage.setItem(
               storageKey,
-              JSON.stringify({ data: newData, quiz: { ...quizState, ...nextQuiz } })
+              JSON.stringify({ data: newData, quiz: mergedQuiz })
             );
           } catch (e) {}
         });
@@ -633,7 +648,7 @@ export default function App() {
   };
 
   const startSelectedMode = async () => {
-    const session = String(chooserSession || '').trim().toUpperCase();
+    const session = normalizeSessionId(chooserSession);
 
     if (!session) {
       setTeacherAuthError('수업 코드를 입력해 주세요.');
@@ -684,6 +699,7 @@ export default function App() {
       setActiveSession(session);
       setViewMode('student');
       setStudentGroup(group);
+      setSelectedRoleGroup(group);
       setShowGuideModal(true);
       setTeacherAuthError('');
     }
@@ -723,10 +739,18 @@ export default function App() {
         const docRef = getGroupDoc(dbRef.current, activeSession, target);
         await setDoc(docRef, { ...initialGroup, quizCompleted: false });
         const nextAll = { ...groupDataRef.current, [target]: initialGroup };
+        const nextQuiz = { ...quizStateRef.current, [target]: false };
         groupDataRef.current = nextAll;
+        quizStateRef.current = nextQuiz;
         setGroupData(nextAll);
         setLocalTimers(prev => ({ ...prev, [target]: { elapsed: 0, lastDingTime: -1 } }));
-        setQuizState(prev => ({ ...prev, [target]: false }));
+        setQuizState(nextQuiz);
+        try {
+          window.localStorage.setItem(
+            getStorageKey(activeSession),
+            JSON.stringify({ data: nextAll, quiz: nextQuiz })
+          );
+        } catch (e) {}
         setShowResetModal(false);
         setResetTargetGroup(null);
         setResetMessage(target + '모둠 기록을 초기화했습니다.');
@@ -739,7 +763,14 @@ export default function App() {
         setGroupData(initial.data);
         groupDataRef.current = initial.data;
         setLocalTimers(initial.timers);
+        quizStateRef.current = initial.quiz;
         setQuizState(initial.quiz);
+        try {
+          window.localStorage.setItem(
+            getStorageKey(activeSession),
+            JSON.stringify({ data: initial.data, quiz: initial.quiz })
+          );
+        } catch (e) {}
         setShowRoleModal(false);
         setShowGuideModal(false);
         setResetTargetGroup(null);
@@ -1050,16 +1081,10 @@ export default function App() {
             </div>
 
             <div className="mb-4 flex justify-center items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200">
-              <label className="font-extrabold text-slate-700 text-sm">모둠 선택:</label>
-              <select 
-                value={selectedRoleGroup} 
-                onChange={e => setSelectedRoleGroup(e.target.value)}
-                className="bg-white font-black text-indigo-600 border-2 border-indigo-200 rounded-xl px-4 py-1.5 text-base outline-none cursor-pointer"
-              >
-                {[1,2,3,4,5,6].map(g => (
-                  <option key={g} value={g.toString()}>{g} 모둠</option>
-                ))}
-              </select>
+              <label className="font-extrabold text-slate-700 text-sm">우리 모둠:</label>
+              <div className="bg-white font-black text-indigo-600 border-2 border-indigo-200 rounded-xl px-4 py-1.5 text-base">
+                {studentGroup}모둠
+              </div>
             </div>
 
             <div className="space-y-3 mb-6 text-left">
