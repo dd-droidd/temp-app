@@ -299,9 +299,16 @@ export default function App() {
       window.localStorage.getItem('cute-science-temp-app-view-mode-v1') === 'teacher'
     );
   });
-  const [isTeacherAuthenticated, setIsTeacherAuthenticated] = useState(false);
+  const [isTeacherAuthenticated, setIsTeacherAuthenticated] = useState(() =>
+    typeof window !== 'undefined' &&
+    window.sessionStorage.getItem('cute-science-temp-app-teacher-auth-v1') === '1'
+  );
   const [teacherLoginReady, setTeacherLoginReady] = useState(false);
-  const [showTeacherLogin, setShowTeacherLogin] = useState(isTeacherMode);
+  const [showTeacherLogin, setShowTeacherLogin] = useState(() =>
+    isTeacherMode &&
+    typeof window !== 'undefined' &&
+    window.sessionStorage.getItem('cute-science-temp-app-teacher-auth-v1') !== '1'
+  );
   const [teacherPin, setTeacherPin] = useState('');
   const [teacherAuthError, setTeacherAuthError] = useState('');
   const [isTeacherSigningIn, setIsTeacherSigningIn] = useState(false);
