@@ -48,6 +48,7 @@ const createInitialGroup = (i) => ({
   hotWater: Array(10).fill(''),
   coldWater: Array(10).fill(''),
   timerStartTime: null,
+  timerElapsed: 0,
   members: [
     { name: '', role: '기록자' },
     { name: '', role: '온도측정자' },
@@ -302,6 +303,7 @@ export default function App() {
             if (!Array.isArray(mergedData[id].hotWater)) mergedData[id].hotWater = Array(10).fill('');
             if (!Array.isArray(mergedData[id].coldWater)) mergedData[id].coldWater = Array(10).fill('');
             if (!Array.isArray(mergedData[id].members)) mergedData[id].members = createInitialGroup(Number(id)).members;
+            if (typeof mergedData[id].timerElapsed !== 'number') mergedData[id].timerElapsed = 0;
           });
           setGroupData(mergedData);
           groupDataRef.current = mergedData;
@@ -375,11 +377,11 @@ export default function App() {
               setTimeout(() => {
                 const latest = groupDataRef.current[groupId];
                 if (latest?.timerStartTime) {
-                  const stopped = { ...latest, timerStartTime: null };
+                  const stopped = { ...latest, timerStartTime: null, timerElapsed: 480 };
                   const nextAll = { ...groupDataRef.current, [groupId]: stopped };
                   groupDataRef.current = nextAll;
                   setGroupData(nextAll);
-                  persistGroup(groupId, { timerStartTime: null });
+                  persistGroup(groupId, { timerStartTime: null, timerElapsed: 480 });
                   playDing('tada');
                 }
               }, 0);
@@ -390,7 +392,7 @@ export default function App() {
               newTimers[groupId].lastDingTime = diff;
             }
           } else {
-            newTimers[groupId].elapsed = 0;
+            newTimers[groupId].elapsed = Number(data.timerElapsed || 0);
             newTimers[groupId].lastDingTime = -1; 
           }
         });
@@ -460,33 +462,72 @@ export default function App() {
     await persistGroup(groupId, nextGroup);
   };
 
-  const startRealTimer = async (groupId, isTimerRunning) => {
+  const startRealTimer = async (groupId) => {
     try {
       if (!globalAudioCtx) globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
       if (globalAudioCtx.state === 'suspended') globalAudioCtx.resume();
     } catch(e) {}
 
     const current = groupDataRef.current[groupId] || createInitialGroup(Number(groupId));
-    const newTime = isTimerRunning ? null : Date.now();
-    const nextGroup = { ...current, timerStartTime: newTime };
+    const nextGroup = { ...current, timerStartTime: Date.now(), timerElapsed: 0 };
     const updatedGroupData = { ...groupDataRef.current, [groupId]: nextGroup };
 
     setGroupData(updatedGroupData);
     groupDataRef.current = updatedGroupData;
-    await persistGroup(groupId, { timerStartTime: newTime });
+    setLocalTimers(prev => ({
+      ...prev,
+      [groupId]: { elapsed: 0, lastDingTime: -1 }
+    }));
+    await persistGroup(groupId, { timerStartTime: nextGroup.timerStartTime, timerElapsed: 0 });
+  };
+
+  const stopTimer = async (groupId) => {
+    const current = groupDataRef.current[groupId] || createInitialGroup(Number(groupId));
+    if (!current.timerStartTime) return;
+
+    const elapsed = Math.min(480, Math.max(0, Math.floor((Date.now() - current.timerStartTime) / 1000)));
+    const nextGroup = { ...current, timerStartTime: null, timerElapsed: elapsed };
+    const updatedGroupData = { ...groupDataRef.current, [groupId]: nextGroup };
+
+    setGroupData(updatedGroupData);
+    groupDataRef.current = updatedGroupData;
+    setLocalTimers(prev => ({
+      ...prev,
+      [groupId]: { elapsed, lastDingTime: -1 }
+    }));
+    await persistGroup(groupId, { timerStartTime: null, timerElapsed: elapsed });
+  };
+
+  const resetTimer = async (groupId) => {
+    const current = groupDataRef.current[groupId] || createInitialGroup(Number(groupId));
+    const nextGroup = { ...current, timerStartTime: null, timerElapsed: 0 };
+    const updatedGroupData = { ...groupDataRef.current, [groupId]: nextGroup };
+
+    setGroupData(updatedGroupData);
+    groupDataRef.current = updatedGroupData;
+    setLocalTimers(prev => ({
+      ...prev,
+      [groupId]: { elapsed: 0, lastDingTime: -1 }
+    }));
+    await persistGroup(groupId, { timerStartTime: null, timerElapsed: 0 });
   };
 
   const toggleTimer = (groupId) => {
     const data = groupData[groupId];
     const isTimerRunning = !!data.timerStartTime;
 
-    if (!isTimerRunning && !hasAgreedSafety) {
+    if (isTimerRunning) {
+      stopTimer(groupId);
+      return;
+    }
+
+    if (!hasAgreedSafety && viewMode !== 'teacher') {
       setPendingTimerGroup(groupId);
       setShowGuideModal(true);
       return;
     }
 
-    startRealTimer(groupId, isTimerRunning);
+    startRealTimer(groupId);
   };
 
   const handleSafetyAgree = () => {
@@ -518,7 +559,7 @@ export default function App() {
 
     setShowRoleModal(false);
     if (pendingTimerGroup) {
-      startRealTimer(pendingTimerGroup, false);
+      startRealTimer(pendingTimerGroup);
       setPendingTimerGroup(null);
     }
   };
@@ -726,16 +767,29 @@ export default function App() {
                     <span className="font-mono text-3xl font-black text-slate-700 w-24 text-center tracking-tight">
                       {Math.floor(local.elapsed / 60).toString().padStart(2, '0')}:{(local.elapsed % 60).toString().padStart(2, '0')}
                     </span>
-                    <button
-                      onClick={() => toggleTimer(groupId)}
-                      className={`px-6 py-3 rounded-2xl text-sm font-extrabold shadow-md border-b-4 active:translate-y-1 active:border-b-0 transition-all ${
-                        isTimerRunning 
-                        ? 'bg-rose-400 text-white border-rose-600 hover:bg-rose-500' 
-                        : 'bg-sky-400 text-white border-sky-600 hover:bg-sky-500'
-                      }`}
-                    >
-                      {isTimerRunning ? '⏹️ 정지' : '▶️ 시작'}
-                    </button>
+                    <div className="flex items-center gap-2 flex-wrap justify-center">
+                      {!isTimerRunning ? (
+                        <button
+                          onClick={() => toggleTimer(groupId)}
+                          className="px-5 py-3 rounded-2xl text-sm font-extrabold shadow-md border-b-4 active:translate-y-1 active:border-b-0 transition-all bg-sky-400 text-white border-sky-600 hover:bg-sky-500"
+                        >
+                          ▶️ 시작
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => stopTimer(groupId)}
+                          className="px-5 py-3 rounded-2xl text-sm font-extrabold shadow-md border-b-4 active:translate-y-1 active:border-b-0 transition-all bg-rose-400 text-white border-rose-600 hover:bg-rose-500"
+                        >
+                          ⏹️ 정지하기
+                        </button>
+                      )}
+                      <button
+                        onClick={() => resetTimer(groupId)}
+                        className="px-4 py-2.5 rounded-2xl text-xs font-extrabold bg-slate-100 text-slate-700 border-2 border-slate-200 hover:bg-slate-200 shadow-sm"
+                      >
+                        🔄 초기화하기
+                      </button>
+                    </div>
                   </div>
                 </div>
 
