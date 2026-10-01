@@ -41,6 +41,14 @@ const NUM_GROUPS = 6;
 const TIME_LABELS = ['처음', '30초', '1분', '2분', '3분', '4분', '5분', '6분', '7분', '8분'];
 const TARGET_TIMES = [30, 60, 120, 180, 240, 300, 360, 420, 480];
 
+const normalizeSessionId = (value) =>
+  String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9가-힣_-]/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 40);
+
 const getStorageKey = (sessionId) =>
   `${APP_ID}-${normalizeSessionId(sessionId)}-local-state-v3`;
 
