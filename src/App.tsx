@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from "firebase/app";
-import { getAuth, signInAnonymously, onAuthStateChanged } from "firebase/auth";
+import { getAuth, signInAnonymously } from "firebase/auth";
 import { getFirestore, doc, setDoc, collection, onSnapshot } from "firebase/firestore";
 import {
   Chart as ChartJS,
@@ -37,40 +37,11 @@ const firebaseConfig = {
 
 const APP_ID = 'cute-science-temp-app';
 const COLLECTION_NAME = 'temperature-data';
-const SESSION_STORAGE_KEY = `${APP_ID}-session-id-v1`;
 const NUM_GROUPS = 6;
 const TIME_LABELS = ['처음', '30초', '1분', '2분', '3분', '4분', '5분', '6분', '7분', '8분'];
 const TARGET_TIMES = [30, 60, 120, 180, 240, 300, 360, 420, 480];
 
-const normalizeSessionId = (value) => {
-  const normalized = String(value || '')
-    .trim()
-    .toUpperCase()
-    .replace(/\\s+/g, '-')
-    .replace(/[^A-Z0-9가-힣_-]/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 30);
-  return normalized || 'DEFAULT';
-};
-
-const SESSION_ID = normalizeSessionId(
-  (typeof window !== 'undefined' && window.localStorage.getItem(SESSION_STORAGE_KEY)) ||
-  (typeof window !== 'undefined' && window.__SCIENCE_SESSION_ID__) ||
-  'DEFAULT'
-);
-
-// Firebase 이메일/비밀번호 인증은 최소 6자 이상의 비밀번호가 필요합니다.
-// 이 수업용 앱은 사용 편의를 위해 별도의 4자리 선생님 PIN을 사용합니다.
-const TEACHER_PIN = '2468';
-
-const STORAGE_KEY = `${APP_ID}-${SESSION_ID}-local-state-v3`;
-
-const getGroupCollection = (db) =>
-  collection(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, SESSION_ID, 'groups');
-
-const getGroupDoc = (db, groupId) =>
-  doc(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, SESSION_ID, 'groups', String(groupId));
+const STORAGE_KEY = `${APP_ID}-local-state-v2`;
 
 const createInitialGroup = (i) => ({
   name: `${i}모둠`,
@@ -291,38 +262,16 @@ export default function App() {
   const [quizState, setQuizState] = useState({});
   const groupDataRef = useRef({}); 
   const [isConnected, setIsConnected] = useState(false);
-  const [viewMode, setViewMode] = useState(() => {
-    if (typeof window === 'undefined') return '';
-    const params = new URLSearchParams(window.location.search);
-    const urlMode = params.get('mode');
-    if (urlMode === 'teacher' || urlMode === 'student') return urlMode;
-    const saved = window.localStorage.getItem('cute-science-temp-app-view-mode-v1');
-    return saved === 'teacher' || saved === 'student' ? saved : '';
-  });
-  const [studentGroup, setStudentGroup] = useState(() => {
-    if (typeof window === 'undefined') return '1';
-    const params = new URLSearchParams(window.location.search);
-    const urlGroup = params.get('group');
-    if (/^[1-6]$/.test(urlGroup || '')) return urlGroup;
-    const saved = window.localStorage.getItem('cute-science-temp-app-student-group-v1');
-    return /^[1-6]$/.test(saved || '') ? saved : '1';
-  });
-  const [showModeChooser, setShowModeChooser] = useState(true);
+  const dbRef = useRef(null);
+  const [viewMode, setViewMode] = useState('');
+  const [studentGroup, setStudentGroup] = useState('1');
   const [chooserMode, setChooserMode] = useState('');
-  const [chooserSession, setChooserSession] = useState(() => {
-    if (typeof window === 'undefined') return '';
-    const params = new URLSearchParams(window.location.search);
-    return params.get('session') || window.localStorage.getItem(SESSION_STORAGE_KEY) || '';
-  });
-  const [chooserGroup, setChooserGroup] = useState('1');
+  const [chooserSession, setChooserSession] = useState('');
   const [teacherPin, setTeacherPin] = useState('');
   const [teacherAuthError, setTeacherAuthError] = useState('');
-  const [isTeacherAuthenticated, setIsTeacherAuthenticated] = useState(() =>
-    typeof window !== 'undefined' &&
-    window.sessionStorage.getItem('cute-science-temp-app-teacher-auth-v1') === '1'
-  );
-  const dbRef = useRef(null);
+  const [isTeacherAuthenticated, setIsTeacherAuthenticated] = useState(false);
 
+  const [showGuideModal, setShowGuideModal] = useState(false); // 처음 시작 시 안전 수칙 모달 표시
   const [showThermometerModal, setShowThermometerModal] = useState(false);
   const [isSafetyChecked, setIsSafetyChecked] = useState(false); // 안전 수칙 동의 체크박스 상태
   const [showRoleModal, setShowRoleModal] = useState(false); 
@@ -368,9 +317,7 @@ export default function App() {
     setLocalTimers(initial.timers);
     if (!restored) setQuizState(initial.quiz);
 
-    if (firebaseConfig.apiKey === "YOUR_API_KEY") {
-      return;
-    }
+    if (firebaseConfig.apiKey === "YOUR_API_KEY") return;
 
     try {
       const app = initializeApp(firebaseConfig);
@@ -378,14 +325,11 @@ export default function App() {
       const db = getFirestore(app);
       dbRef.current = db;
 
-      let unsubscribeSnapshot = null;
-      let unsubscribeAuth = null;
-
-      const startSnapshot = () => {
-        if (unsubscribeSnapshot) return;
+      let unsubscribe = null;
+      signInAnonymously(auth).then(() => {
         setIsConnected(true);
-        const collRef = getGroupCollection(db);
-        unsubscribeSnapshot = onSnapshot(collRef, (snapshot) => {
+        const collRef = collection(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME);
+        unsubscribe = onSnapshot(collRef, (snapshot) => {
           const newData = { ...groupDataRef.current };
           const nextQuiz = {};
           snapshot.docs.forEach(docSnap => {
@@ -401,91 +345,11 @@ export default function App() {
             window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ data: newData, quiz: { ...quizState, ...nextQuiz } }));
           } catch (e) {}
         });
-      };
+      }).catch(() => {});
 
-      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-
-        if (user) {
-          startSnapshot();
-        } else {
-          try {
-            await signInAnonymously(auth);
-          } catch (e) {}
-        }
-      });
-
-      return () => {
-        if (unsubscribeSnapshot) unsubscribeSnapshot();
-        if (unsubscribeAuth) unsubscribeAuth();
-      };
-    } catch (e) {
-      setIsConnected(false);
-    }
+      return () => { if (unsubscribe) unsubscribe(); };
+    } catch (e) {}
   }, []);
-
-  const makeSessionCode = () => {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let code = '';
-    for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
-    return code;
-  };
-
-  const startSelectedMode = () => {
-    const session = normalizeSessionId(chooserSession);
-    if (!session || session === 'DEFAULT') {
-      setTeacherAuthError('수업 코드를 입력해 주세요.');
-      return;
-    }
-    if (chooserMode === 'teacher') {
-      if (teacherPin !== TEACHER_PIN) {
-        setTeacherAuthError('선생님 PIN이 올바르지 않습니다.');
-        return;
-      }
-      window.localStorage.setItem('cute-science-temp-app-view-mode-v1', 'teacher');
-      window.localStorage.setItem(SESSION_STORAGE_KEY, session);
-      window.sessionStorage.setItem('cute-science-temp-app-teacher-auth-v1', '1');
-      setViewMode('teacher');
-      setShowModeChooser(false);
-      setShowGuideModal(false);
-      setTeacherAuthError('');
-      return;
-    }
-    if (chooserMode === 'student') {
-      const group = /^[1-6]$/.test(chooserGroup) ? chooserGroup : '1';
-      window.localStorage.setItem('cute-science-temp-app-view-mode-v1', 'student');
-      window.localStorage.setItem('cute-science-temp-app-student-group-v1', group);
-      window.localStorage.setItem(SESSION_STORAGE_KEY, session);
-      window.sessionStorage.removeItem('cute-science-temp-app-teacher-auth-v1');
-      setViewMode('student');
-      setStudentGroup(group);
-      setShowModeChooser(false);
-      setShowGuideModal(true);
-      setTeacherAuthError('');
-    }
-  };
-
-  const openModeChooser = () => {
-    setChooserMode('');
-    setTeacherPin('');
-    setTeacherAuthError('');
-    setChooserSession(SESSION_ID === 'DEFAULT' ? '' : SESSION_ID);
-    setShowModeChooser(true);
-  };
-
-  useEffect(() => {
-    // 페이지가 로드될 때마다 시작 화면으로 돌아옵니다.
-    setShowModeChooser(true);
-    setChooserMode('');
-    setTeacherPin('');
-    setTeacherAuthError('');
-  }, []);
-
-  const requestReset = (groupId = null) => {
-    if (viewMode !== 'teacher' || !isTeacherAuthenticated) return;
-    setResetTargetGroup(groupId);
-    setResetMessage('');
-    setShowResetModal(true);
-  };
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -568,7 +432,7 @@ export default function App() {
 
     if (isConnected && dbRef.current) {
       try {
-        const docRef = getGroupDoc(dbRef.current, groupId);
+        const docRef = doc(dbRef.current, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, groupId.toString());
         await setDoc(docRef, { ...groupValue, ...extra }, { merge: true });
       } catch(e) {}
     }
@@ -615,7 +479,7 @@ export default function App() {
     const data = groupData[groupId];
     const isTimerRunning = !!data.timerStartTime;
 
-    if (!isTimerRunning && !hasAgreedSafety && viewMode !== 'teacher') {
+    if (!isTimerRunning && !hasAgreedSafety) {
       setPendingTimerGroup(groupId);
       setShowGuideModal(true);
       return;
@@ -658,78 +522,81 @@ export default function App() {
     }
   };
 
-  const resetClassroomRecords = async () => {
-    if (isResetting) return;
-
-    if (viewMode !== 'teacher' || !isTeacherAuthenticated) {
-      setResetMessage('선생님 화면에서 인증 후 사용할 수 있습니다.');
+  const startSelectedMode = () => {
+    const session = chooserSession.trim();
+    if (!session) {
+      setTeacherAuthError('수업 코드를 입력해 주세요.');
       return;
     }
+    if (chooserMode === 'teacher') {
+      if (teacherPin !== '2468') {
+        setTeacherAuthError('선생님 PIN은 4자리 숫자 2468입니다.');
+        return;
+      }
+      setViewMode('teacher');
+      setIsTeacherAuthenticated(true);
+      setShowGuideModal(false);
+      setTeacherAuthError('');
+      return;
+    }
+    if (chooserMode === 'student') {
+      setViewMode('student');
+      setStudentGroup(/^[1-6]$/.test(studentGroup) ? studentGroup : '1');
+      setShowGuideModal(true);
+      setTeacherAuthError('');
+    }
+  };
+
+  const openModeChooser = () => {
+    setChooserMode('');
+    setTeacherPin('');
+    setTeacherAuthError('');
+  };
+
+  const requestReset = (groupId = null) => {
+    if (viewMode !== 'teacher' || !isTeacherAuthenticated) return;
+    setResetTargetGroup(groupId);
+    setResetMessage('');
+    setShowResetModal(true);
+  };
+
+  const resetClassroomRecords = async () => {
+    if (isResetting) return;
+    if (viewMode !== 'teacher' || !isTeacherAuthenticated) return;
 
     setIsResetting(true);
     setResetMessage('');
-
     const target = resetTargetGroup;
 
     try {
-      if (!isConnected || !dbRef.current) {
-        throw new Error('Firebase 연결이 준비되지 않았습니다.');
-      }
+      if (!isConnected || !dbRef.current) throw new Error('Firebase 연결이 준비되지 않았습니다.');
 
       if (target) {
-        const groupId = target;
-        const initialGroup = createInitialGroup(Number(groupId));
-        const docRef = getGroupDoc(dbRef.current, groupId);
-
-        await setDoc(docRef, {
-          ...initialGroup,
-          quizCompleted: false
-        });
-
-        const nextAll = { ...groupDataRef.current, [groupId]: initialGroup };
+        const initialGroup = createInitialGroup(Number(target));
+        const docRef = doc(dbRef.current, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, target);
+        await setDoc(docRef, { ...initialGroup, quizCompleted: false });
+        const nextAll = { ...groupDataRef.current, [target]: initialGroup };
         groupDataRef.current = nextAll;
         setGroupData(nextAll);
-        setLocalTimers(prev => ({
-          ...prev,
-          [groupId]: { elapsed: 0, lastDingTime: -1 }
-        }));
-        setQuizState(prev => ({ ...prev, [groupId]: false }));
-
+        setLocalTimers(prev => ({ ...prev, [target]: { elapsed: 0, lastDingTime: -1 } }));
+        setQuizState(prev => ({ ...prev, [target]: false }));
         setShowResetModal(false);
         setResetTargetGroup(null);
-        setResetMessage(groupId + '모둠 기록을 초기화했습니다.');
+        setResetMessage(target + '모둠 기록을 초기화했습니다.');
       } else {
         const initial = createInitialState();
-
         for (let i = 1; i <= NUM_GROUPS; i++) {
-          const docRef = getGroupDoc(dbRef.current, i);
-
-          await setDoc(docRef, {
-            ...initial.data[i],
-            quizCompleted: false
-          });
+          const docRef = doc(dbRef.current, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, String(i));
+          await setDoc(docRef, { ...initial.data[i], quizCompleted: false });
         }
-
         setGroupData(initial.data);
         groupDataRef.current = initial.data;
         setLocalTimers(initial.timers);
         setQuizState(initial.quiz);
-        setActiveQuizGroup(null);
-        setQuizAnswers({ ans1: '', ans2: '' });
-        setQuizFeedback('');
-
-        window.localStorage.setItem(
-          STORAGE_KEY,
-          JSON.stringify({ data: initial.data, quiz: initial.quiz })
-        );
-
         setShowRoleModal(false);
         setShowGuideModal(false);
-        setIsSafetyChecked(false);
-        setHasAgreedSafety(false);
-        setPendingTimerGroup(null);
-        setShowResetModal(false);
         setResetTargetGroup(null);
+        setShowResetModal(false);
         setResetMessage('1~6모둠의 모든 기록을 초기화했습니다.');
       }
     } catch (e) {
@@ -738,6 +605,7 @@ export default function App() {
       setIsResetting(false);
     }
   };
+
   const handleQuizSubmit = async () => {
     if (quizAnswers.ans1 === '높은' && quizAnswers.ans2 === '낮은') {
       playDing('tada');
@@ -755,7 +623,7 @@ export default function App() {
       
       if (isConnected && dbRef.current) {
         try {
-          const docRef = getGroupDoc(dbRef.current, activeQuizGroup);
+          const docRef = doc(dbRef.current, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, activeQuizGroup.toString());
           await setDoc(docRef, { quizCompleted: true }, { merge: true });
         } catch(e) {}
       }
@@ -766,29 +634,23 @@ export default function App() {
 
   return (
     <>
-      {showModeChooser && (
-        <ModeChooser
-          mode={chooserMode}
-          session={chooserSession}
-          group={chooserGroup}
-          pin={teacherPin}
-          error={teacherAuthError}
-          onTeacher={() => { setChooserMode('teacher'); setTeacherAuthError(''); }}
-          onStudent={() => { setChooserMode('student'); setTeacherAuthError(''); }}
-          onSessionChange={(value) => { setChooserSession(value); setTeacherAuthError(''); }}
-          onGroupChange={setChooserGroup}
-          onPinChange={(value) => { setTeacherPin(value); setTeacherAuthError(''); }}
-          onStart={startSelectedMode}
-          makeCode={makeSessionCode}
-        />
-      )}
-
-    <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 p-4 sm:p-6 md:p-8 font-sans">
+      <ModeChooser
+        mode={chooserMode}
+        session={chooserSession}
+        group={studentGroup}
+        pin={teacherPin}
+        error={teacherAuthError}
+        onTeacher={() => { setChooserMode('teacher'); setTeacherAuthError(''); }}
+        onStudent={() => { setChooserMode('student'); setTeacherAuthError(''); }}
+        onSessionChange={(v) => { setChooserSession(v); setTeacherAuthError(''); }}
+        onGroupChange={setStudentGroup}
+        onPinChange={(v) => { setTeacherPin(v); setTeacherAuthError(''); }}
+        onStart={startSelectedMode}
+        makeCode={() => '수업1'}
+      />
+      <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 p-4 sm:p-6 md:p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-8">
         <header className="text-center relative space-y-6 pt-4">
-          <div className="inline-flex items-center gap-2 bg-white px-5 py-2 rounded-full shadow-sm border-2 border-indigo-100 text-sm font-black text-indigo-700">
-            🧪 현재 수업 코드: <span className="text-indigo-900">{SESSION_ID}</span>
-          </div>
           <div className="inline-block bg-white px-8 py-4 rounded-full shadow-sm border-2 border-pink-100">
             <h1 className="text-2xl md:text-4xl font-extrabold text-slate-800 tracking-tight flex items-center justify-center gap-3">
               <span className="text-4xl">🌡️</span> 
@@ -799,21 +661,27 @@ export default function App() {
           
           {viewMode === 'teacher' ? (
             <div className="flex flex-wrap justify-center items-center gap-3">
-              <div className="bg-white text-slate-700 px-5 py-3 rounded-3xl text-sm font-black shadow-md border-b-4 border-slate-200">👩‍🏫 선생님 화면 · 1~6모둠 전체</div>
-              <div className="bg-rose-50 border-2 border-rose-100 rounded-2xl px-3 py-2 flex items-center gap-2 flex-wrap justify-center">
-                <span className="text-xs font-black text-rose-700">🧹 초기화</span>
-                {[1,2,3,4,5,6].map(g => <button key={g} onClick={() => requestReset(String(g))} className="bg-white hover:bg-rose-100 text-rose-700 px-3 py-2 rounded-xl text-xs font-black border border-rose-200">{g}모둠</button>)}
-              </div>
-              <button onClick={() => requestReset(null)} className="bg-rose-500 hover:bg-rose-600 text-white px-4 py-3 rounded-2xl text-sm font-black shadow-md">전체 초기화</button>
-              <button onClick={openModeChooser} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-3 rounded-2xl text-sm font-black">🔄 화면 변경</button>
+              <div className="bg-white text-slate-700 px-5 py-3 rounded-3xl text-sm font-black shadow-md">👩‍🏫 선생님 화면 · 1~6모둠 전체</div>
+              {[1,2,3,4,5,6].map(g => (
+                <button key={g} onClick={() => requestReset(String(g))} className="bg-rose-50 text-rose-700 border-2 border-rose-200 px-3 py-2 rounded-xl text-xs font-black">{g}모둠 초기화</button>
+              ))}
+              <button onClick={() => requestReset(null)} className="bg-rose-500 text-white px-4 py-3 rounded-2xl text-sm font-black">전체 초기화</button>
+              <button onClick={openModeChooser} className="bg-slate-100 text-slate-700 px-4 py-3 rounded-2xl text-sm font-black">🔄 화면 변경</button>
             </div>
           ) : (
             <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
-              <div className="bg-white text-slate-700 px-6 py-4 rounded-3xl text-sm md:text-base font-bold shadow-md border-b-4 border-slate-200">💡 모둠별 <strong className="text-blue-500">타이머 시작</strong> 버튼을 누르면 정해진 시간에 띠링! 소리가 나요.</div>
-              <button onClick={() => setShowRoleModal(true)} className="bg-indigo-100 text-indigo-800 hover:bg-indigo-200 px-6 py-4 rounded-3xl inline-flex items-center gap-2 text-sm md:text-base font-extrabold shadow-md border-b-4 border-indigo-300"><span className="text-xl">👥</span> 모둠 역할 설정</button>
-              <button onClick={() => setShowThermometerModal(true)} className="bg-yellow-100 text-yellow-800 hover:bg-yellow-200 px-6 py-4 rounded-3xl inline-flex items-center gap-2 text-sm md:text-base font-extrabold shadow-md border-b-4 border-yellow-300"><span className="text-xl">📖</span> 탐침 온도계 사용법</button>
+              <div className="bg-white text-slate-700 px-6 py-4 rounded-3xl text-sm md:text-base font-bold shadow-md border-b-4 border-slate-200">
+                💡 모둠별 <strong className="text-blue-500">타이머 시작</strong> 버튼을 누르면 정해진 시간에 띠링! 소리가 나요.
+              </div>
+              <button onClick={() => setShowRoleModal(true)} className="bg-indigo-100 text-indigo-800 hover:bg-indigo-200 px-6 py-4 rounded-3xl inline-flex items-center gap-2 text-sm md:text-base font-extrabold shadow-md border-b-4 border-indigo-300">
+                <span className="text-xl">👥</span> 모둠 역할 설정
+              </button>
+              <button onClick={() => setShowThermometerModal(true)} className="bg-yellow-100 text-yellow-800 hover:bg-yellow-200 px-6 py-4 rounded-3xl inline-flex items-center gap-2 text-sm md:text-base font-extrabold shadow-md border-b-4 border-yellow-300">
+                <span className="text-xl">📖</span> 탐침 온도계 사용법
+              </button>
             </div>
-          )}        </header>
+          )}
+        </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {Object.entries(groupData).filter(([groupId]) => viewMode === 'teacher' || groupId === studentGroup).map(([groupId, data]) => {
