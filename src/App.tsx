@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";
 import { getFirestore, doc, setDoc, collection, onSnapshot } from "firebase/firestore";
 import {
@@ -365,7 +365,8 @@ export default function App() {
     let unsubscribe = null;
 
     try {
-      const app = initializeApp(firebaseConfig, activeSession);
+      const appName = `session-${normalizeSessionId(activeSession)}`;
+      const app = getApps().find(existing => existing.name === appName) || initializeApp(firebaseConfig, appName);
       const auth = getAuth(app);
       const db = getFirestore(app);
       dbRef.current = db;
@@ -459,7 +460,7 @@ export default function App() {
     }, 200);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [activeSession]);
 
   const isInputUnlocked = (groupId, index) => {
     const data = groupData[groupId];
@@ -673,7 +674,6 @@ export default function App() {
       setActiveSession(session);
       setViewMode('teacher');
       setIsTeacherAuthenticated(true);
-      setShowModeChooser(false);
       setShowGuideModal(false);
       setTeacherAuthError('');
       return;
@@ -684,7 +684,6 @@ export default function App() {
       setActiveSession(session);
       setViewMode('student');
       setStudentGroup(group);
-      setShowModeChooser(false);
       setShowGuideModal(true);
       setTeacherAuthError('');
     }
@@ -699,7 +698,6 @@ export default function App() {
     setPinAttempts(0);
     setPinLockedUntil(0);
     setChooserSession(activeSession || '');
-    setShowModeChooser(true);
   };
 
   const requestReset = (groupId = null) => {
