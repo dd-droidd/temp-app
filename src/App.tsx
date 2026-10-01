@@ -36,11 +36,36 @@ const firebaseConfig = {
 
 const APP_ID = 'cute-science-temp-app';
 const COLLECTION_NAME = 'temperature-data';
+const SESSION_STORAGE_KEY = `${APP_ID}-session-id-v1`;
 const NUM_GROUPS = 6;
 const TIME_LABELS = ['처음', '30초', '1분', '2분', '3분', '4분', '5분', '6분', '7분', '8분'];
 const TARGET_TIMES = [30, 60, 120, 180, 240, 300, 360, 420, 480];
 
-const STORAGE_KEY = `${APP_ID}-local-state-v2`;
+const normalizeSessionId = (value) => {
+  const normalized = String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\\s+/g, '-')
+    .replace(/[^A-Z0-9가-힣_-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 30);
+  return normalized || 'DEFAULT';
+};
+
+const SESSION_ID = normalizeSessionId(
+  (typeof window !== 'undefined' && window.localStorage.getItem(SESSION_STORAGE_KEY)) ||
+  (typeof window !== 'undefined' && window.__SCIENCE_SESSION_ID__) ||
+  'DEFAULT'
+);
+
+const STORAGE_KEY = `${APP_ID}-${SESSION_ID}-local-state-v3`;
+
+const getGroupCollection = (db) =>
+  collection(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, SESSION_ID, 'groups');
+
+const getGroupDoc = (db, groupId) =>
+  doc(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, SESSION_ID, 'groups', String(groupId));
 
 const createInitialGroup = (i) => ({
   name: `${i}모둠`,
@@ -320,7 +345,7 @@ export default function App() {
       let unsubscribe = null;
       signInAnonymously(auth).then(() => {
         setIsConnected(true);
-        const collRef = collection(db, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME);
+        const collRef = getGroupCollection(db);
         unsubscribe = onSnapshot(collRef, (snapshot) => {
           const newData = { ...groupDataRef.current };
           const nextQuiz = {};
@@ -436,7 +461,7 @@ export default function App() {
 
     if (isConnected && dbRef.current) {
       try {
-        const docRef = doc(dbRef.current, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, groupId.toString());
+        const docRef = getGroupDoc(dbRef.current, groupId);
         await setDoc(docRef, { ...groupValue, ...extra }, { merge: true });
       } catch(e) {}
     }
@@ -542,15 +567,7 @@ export default function App() {
       if (target) {
         const groupId = target;
         const initialGroup = createInitialGroup(Number(groupId));
-        const docRef = doc(
-          dbRef.current,
-          'artifacts',
-          APP_ID,
-          'public',
-          'data',
-          COLLECTION_NAME,
-          groupId
-        );
+        const docRef = getGroupDoc(dbRef.current, groupId);
 
         await setDoc(docRef, {
           ...initialGroup,
@@ -573,15 +590,7 @@ export default function App() {
         const initial = createInitialState();
 
         for (let i = 1; i <= NUM_GROUPS; i++) {
-          const docRef = doc(
-            dbRef.current,
-            'artifacts',
-            APP_ID,
-            'public',
-            'data',
-            COLLECTION_NAME,
-            i.toString()
-          );
+          const docRef = getGroupDoc(dbRef.current, i);
 
           await setDoc(docRef, {
             ...initial.data[i],
@@ -634,7 +643,7 @@ export default function App() {
       
       if (isConnected && dbRef.current) {
         try {
-          const docRef = doc(dbRef.current, 'artifacts', APP_ID, 'public', 'data', COLLECTION_NAME, activeQuizGroup.toString());
+          const docRef = getGroupDoc(dbRef.current, activeQuizGroup);
           await setDoc(docRef, { quizCompleted: true }, { merge: true });
         } catch(e) {}
       }
@@ -647,6 +656,9 @@ export default function App() {
     <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 p-4 sm:p-6 md:p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-8">
         <header className="text-center relative space-y-6 pt-4">
+          <div className="inline-flex items-center gap-2 bg-white px-5 py-2 rounded-full shadow-sm border-2 border-indigo-100 text-sm font-black text-indigo-700">
+            🧪 현재 수업 코드: <span className="text-indigo-900">{SESSION_ID}</span>
+          </div>
           <div className="inline-block bg-white px-8 py-4 rounded-full shadow-sm border-2 border-pink-100">
             <h1 className="text-2xl md:text-4xl font-extrabold text-slate-800 tracking-tight flex items-center justify-center gap-3">
               <span className="text-4xl">🌡️</span> 
