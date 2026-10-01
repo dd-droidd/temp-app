@@ -74,7 +74,7 @@ export default function ModeChooser({
 
         {error && <div className="mt-4 p-3 rounded-2xl bg-rose-50 border-2 border-rose-100 text-rose-600 font-bold text-sm text-center">{error}</div>}
 
-        <button type="button" onClick={onStart} className={`mt-5 w-full ${mode === "teacher" ? "bg-indigo-500 hover:bg-indigo-600" : "bg-emerald-500 hover:bg-emerald-600"} text-white px-6 py-4 rounded-full font-black text-lg shadow-md`}>
+        <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); onStart(); }} className={`mt-5 w-full ${mode === "teacher" ? "bg-indigo-500 hover:bg-indigo-600" : "bg-emerald-500 hover:bg-emerald-600"} text-white px-6 py-4 rounded-full font-black text-lg shadow-md`}>
           {mode === "teacher" ? "선생님 화면 열기 🔐" : "이 모둠으로 시작하기 →"}
         </button>
       </div>
