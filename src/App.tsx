@@ -524,15 +524,18 @@ export default function App() {
   };
 
   const startSelectedMode = () => {
-    const session = normalizeSessionId(chooserSession);
-    if (!session || session === 'DEFAULT') {
+    const session = String(chooserSession || '').trim().toUpperCase();
+
+    if (!session) {
       setTeacherAuthError('수업 코드를 입력해 주세요.');
       return;
     }
 
     if (chooserMode === 'teacher') {
-      if (teacherPin !== TEACHER_PIN) {
-        setTeacherAuthError('선생님 PIN이 올바르지 않습니다.');
+      const pin = String(teacherPin || '').replace(/\D/g, '');
+
+      if (pin !== '2468') {
+        setTeacherAuthError('선생님 PIN 4자리(2468)를 정확히 입력해 주세요.');
         return;
       }
 
