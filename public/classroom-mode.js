@@ -83,6 +83,37 @@
     panel.querySelector('.classroom-mode-start').onclick = () => saveMode('student', panel.querySelector('.classroom-mode-select').value);
   }
 
+  function addTeacherResetButton() {
+    if (state.mode !== 'teacher') return;
+    if (document.querySelector('.classroom-reset-menu')) return;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'classroom-reset-menu';
+    wrap.style.cssText = 'position:fixed;right:16px;bottom:64px;z-index:99990;background:white;border-radius:20px;padding:10px;box-shadow:0 8px 28px rgba(0,0,0,.18);font-family:Arial,"Noto Sans KR",sans-serif';
+
+    const title = document.createElement('div');
+    title.textContent = '🧹 모둠 기록 초기화';
+    title.style.cssText = 'font-weight:900;color:#334155;padding:4px 8px 8px;text-align:center;font-size:13px';
+    wrap.appendChild(title);
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:6px';
+
+    ['1','2','3','4','5','6'].forEach(group => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.textContent = group + '모둠';
+      btn.style.cssText = 'border:0;border-radius:12px;padding:9px 10px;background:#fff1f2;color:#be123c;font-weight:900;cursor:pointer';
+      btn.addEventListener('click', () => {
+        window.dispatchEvent(new CustomEvent('classroom-reset-request', { detail: { groupId: group } }));
+      });
+      row.appendChild(btn);
+    });
+
+    wrap.appendChild(row);
+    document.body.appendChild(wrap);
+  }
+
   function addReopen() {
     if (document.querySelector('.classroom-mode-reopen')) return;
     const button = document.createElement('button');
@@ -92,8 +123,8 @@
     document.body.appendChild(button);
   }
 
-  if (!state.mode) showPanel(); else addReopen();
-  const observer = new MutationObserver(() => { applyStudentView(); addReopen(); });
+  if (!state.mode) showPanel(); else { addReopen(); addTeacherResetButton(); }
+  const observer = new MutationObserver(() => { applyStudentView(); addReopen(); addTeacherResetButton(); });
   observer.observe(document.body, {childList:true, subtree:true});
-  [200,700,1500,3000,5000].forEach(ms => setTimeout(() => { applyStudentView(); addReopen(); }, ms));
+  [200,700,1500,3000,5000].forEach(ms => setTimeout(() => { applyStudentView(); addReopen(); addTeacherResetButton(); }, ms));
 })();
