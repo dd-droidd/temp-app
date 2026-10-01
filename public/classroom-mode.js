@@ -162,6 +162,7 @@
               <button class="classroom-code-generate" type="button">새 코드</button>
             </div>
             <button class="classroom-mode-start teacher-start" type="button">이 수업으로 시작하기 →</button>
+            <div class="classroom-current-code teacher-copy-status">💡 수업 코드만 같으면 다른 기기도 같은 수업에 연결됩니다.</div>
           </div>
 
           <div class="classroom-mode-button student">
@@ -185,6 +186,8 @@
 
     panel.querySelector('.classroom-code-generate').onclick = () => {
       panel.querySelector('.teacher-code').value = makeSessionCode();
+      const status = panel.querySelector('.teacher-copy-status');
+      status.textContent = '✨ 새 수업 코드가 만들어졌어요. 이 코드로 수업을 시작하세요.';
     };
 
     panel.querySelector('.teacher-start').onclick = () => {
@@ -209,6 +212,23 @@
     };
   }
 
+  async function copySessionCode() {
+    if (!state.session) return;
+    try {
+      await navigator.clipboard.writeText(state.session);
+      const button = document.querySelector('.classroom-copy-session');
+      if (button) {
+        const oldText = button.textContent;
+        button.textContent = '✅ 복사했어요!';
+        setTimeout(() => {
+          button.textContent = oldText;
+        }, 1500);
+      }
+    } catch (e) {
+      window.prompt('아래 수업 코드를 복사해서 학생들에게 알려주세요.', state.session);
+    }
+  }
+
   function addTeacherResetButton() {
     if (state.mode !== 'teacher') return;
     if (document.querySelector('.classroom-reset-menu')) return;
@@ -223,9 +243,17 @@
     wrap.appendChild(title);
 
     const sessionInfo = document.createElement('div');
-    sessionInfo.textContent = '수업: ' + state.session;
     sessionInfo.style.cssText = 'font-weight:800;color:#64748b;padding:0 8px 8px;text-align:center;font-size:11px';
+    sessionInfo.innerHTML = '수업: <strong>' + state.session + '</strong>';
     wrap.appendChild(sessionInfo);
+
+    const copyButton = document.createElement('button');
+    copyButton.className = 'classroom-copy-session';
+    copyButton.type = 'button';
+    copyButton.textContent = '📋 수업 코드 복사';
+    copyButton.style.cssText = 'width:100%;border:0;border-radius:12px;padding:9px 10px;background:#eef2ff;color:#4338ca;font-weight:900;cursor:pointer;margin-bottom:8px';
+    copyButton.addEventListener('click', copySessionCode);
+    wrap.appendChild(copyButton);
 
     const row = document.createElement('div');
     row.style.cssText = 'display:grid;grid-template-columns:repeat(3,1fr);gap:6px';
@@ -249,7 +277,7 @@
     if (document.querySelector('.classroom-mode-reopen')) return;
     const button = document.createElement('button');
     button.className = 'classroom-mode-reopen';
-    button.textContent = '🔄 수업/사용 모드 변경';
+    button.textContent = state.mode === 'teacher' ? '🔄 수업/사용 모드 변경' : '🔄 수업/모둠 변경';
     button.onclick = showPanel;
     document.body.appendChild(button);
   }
