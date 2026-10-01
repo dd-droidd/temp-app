@@ -287,6 +287,8 @@ export default function App() {
   const [teacherPin, setTeacherPin] = useState('');
   const [teacherAuthError, setTeacherAuthError] = useState('');
   const [isTeacherAuthenticated, setIsTeacherAuthenticated] = useState(false);
+  const [pinAttempts, setPinAttempts] = useState(0);
+  const [pinLockedUntil, setPinLockedUntil] = useState(0);
 
   const [showGuideModal, setShowGuideModal] = useState(false); // 처음 시작 시 안전 수칙 모달 표시
   const [showThermometerModal, setShowThermometerModal] = useState(false);
@@ -621,7 +623,7 @@ export default function App() {
     return code;
   };
 
-  const startSelectedMode = () => {
+  const startSelectedMode = async () => {
     const session = String(chooserSession || '').trim().toUpperCase();
 
     if (!session) {
@@ -630,13 +632,36 @@ export default function App() {
     }
 
     if (chooserMode === 'teacher') {
-      const pin = String(teacherPin || '').replace(/\D/g, '');
-
-      if (pin !== '2468') {
-        setTeacherAuthError('선생님 PIN 4자리(2468)를 정확히 입력해 주세요.');
+      if (Date.now() < pinLockedUntil) {
+        const remain = Math.ceil((pinLockedUntil - Date.now()) / 1000);
+        setTeacherAuthError(`PIN 입력이 잠겨 있습니다. ${remain}초 후 다시 시도해 주세요.`);
         return;
       }
 
+      const pin = String(teacherPin || '').replace(/\D/g, '');
+      if (pin.length !== 4) {
+        setTeacherAuthError('선생님 PIN 4자리를 입력해 주세요.');
+        return;
+      }
+
+      const pinHash = await hashTeacherPin(pin);
+      if (pinHash !== TEACHER_PIN_HASH) {
+        const nextAttempts = pinAttempts + 1;
+        setPinAttempts(nextAttempts);
+        setTeacherPin('');
+
+        if (nextAttempts >= 5) {
+          setPinLockedUntil(Date.now() + 30000);
+          setPinAttempts(0);
+          setTeacherAuthError('PIN을 5회 잘못 입력했습니다. 30초 동안 잠깁니다.');
+        } else {
+          setTeacherAuthError(`PIN이 올바르지 않습니다. 남은 시도: ${5 - nextAttempts}회`);
+        }
+        return;
+      }
+
+      setPinAttempts(0);
+      setPinLockedUntil(0);
       setActiveSession(session);
       setViewMode('teacher');
       setIsTeacherAuthenticated(true);
@@ -663,6 +688,8 @@ export default function App() {
     setChooserMode('');
     setTeacherPin('');
     setTeacherAuthError('');
+    setPinAttempts(0);
+    setPinLockedUntil(0);
     setChooserSession(activeSession || '');
     setShowModeChooser(true);
   };
