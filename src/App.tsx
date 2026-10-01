@@ -13,6 +13,7 @@ import {
   Legend,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
+import ModeChooser from './ModeChooser';
 
 ChartJS.register(
   CategoryScale,
@@ -290,32 +291,42 @@ export default function App() {
   const [quizState, setQuizState] = useState({});
   const groupDataRef = useRef({}); 
   const [isConnected, setIsConnected] = useState(false);
-  const [isTeacherMode] = useState(() => {
-    if (typeof window === 'undefined') return false;
+  const [viewMode, setViewMode] = useState(() => {
+    if (typeof window === 'undefined') return '';
     const params = new URLSearchParams(window.location.search);
-    return (
-      params.get('mode') === 'teacher' ||
-      window.__SCIENCE_VIEW_MODE__ === 'teacher' ||
-      window.localStorage.getItem('cute-science-temp-app-view-mode-v1') === 'teacher'
-    );
+    const urlMode = params.get('mode');
+    if (urlMode === 'teacher' || urlMode === 'student') return urlMode;
+    const saved = window.localStorage.getItem('cute-science-temp-app-view-mode-v1');
+    return saved === 'teacher' || saved === 'student' ? saved : '';
   });
+  const [studentGroup, setStudentGroup] = useState(() => {
+    if (typeof window === 'undefined') return '1';
+    const params = new URLSearchParams(window.location.search);
+    const urlGroup = params.get('group');
+    if (/^[1-6]$/.test(urlGroup || '')) return urlGroup;
+    const saved = window.localStorage.getItem('cute-science-temp-app-student-group-v1');
+    return /^[1-6]$/.test(saved || '') ? saved : '1';
+  });
+  const [showModeChooser, setShowModeChooser] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('mode') !== 'teacher' && params.get('mode') !== 'student';
+  });
+  const [chooserMode, setChooserMode] = useState('');
+  const [chooserSession, setChooserSession] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    const params = new URLSearchParams(window.location.search);
+    return params.get('session') || window.localStorage.getItem(SESSION_STORAGE_KEY) || '';
+  });
+  const [chooserGroup, setChooserGroup] = useState('1');
+  const [teacherPin, setTeacherPin] = useState('');
+  const [teacherAuthError, setTeacherAuthError] = useState('');
   const [isTeacherAuthenticated, setIsTeacherAuthenticated] = useState(() =>
     typeof window !== 'undefined' &&
     window.sessionStorage.getItem('cute-science-temp-app-teacher-auth-v1') === '1'
   );
-  const [teacherLoginReady, setTeacherLoginReady] = useState(false);
-  const [showTeacherLogin, setShowTeacherLogin] = useState(() =>
-    isTeacherMode &&
-    typeof window !== 'undefined' &&
-    window.sessionStorage.getItem('cute-science-temp-app-teacher-auth-v1') !== '1'
-  );
-  const [teacherPin, setTeacherPin] = useState('');
-  const [teacherAuthError, setTeacherAuthError] = useState('');
-  const [isTeacherSigningIn, setIsTeacherSigningIn] = useState(false);
   const dbRef = useRef(null);
-  const authRef = useRef(null);
 
-  const [showGuideModal, setShowGuideModal] = useState(() => !isTeacherMode); // 학생 화면에서만 안전 수칙 표시
   const [showThermometerModal, setShowThermometerModal] = useState(false);
   const [isSafetyChecked, setIsSafetyChecked] = useState(false); // 안전 수칙 동의 체크박스 상태
   const [showRoleModal, setShowRoleModal] = useState(false); 
@@ -419,49 +430,54 @@ export default function App() {
     }
   }, []);
 
-  const handleTeacherLogin = async (event) => {
-    event?.preventDefault();
+  const makeSessionCode = () => {
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let code = '';
+    for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+    return code;
+  };
 
-    if (!/^\\d{4}$/.test(teacherPin)) {
-      setTeacherAuthError('선생님 비밀번호는 숫자 4자리로 입력해 주세요.');
+  const startSelectedMode = () => {
+    const session = normalizeSessionId(chooserSession);
+    if (!session || session === 'DEFAULT') {
+      setTeacherAuthError('수업 코드를 입력해 주세요.');
       return;
     }
-
-    setIsTeacherSigningIn(true);
-    setTeacherAuthError('');
-
-    try {
+    if (chooserMode === 'teacher') {
       if (teacherPin !== TEACHER_PIN) {
-        throw new Error('INVALID_PIN');
+        setTeacherAuthError('선생님 PIN이 올바르지 않습니다.');
+        return;
       }
-
-      setIsTeacherAuthenticated(true);
-      setShowTeacherLogin(false);
-      setTeacherPin('');
-      setShowGuideModal(false);
-      setShowRoleModal(false);
-    } catch (e) {
-      setTeacherAuthError('비밀번호가 올바르지 않습니다.');
-    } finally {
-      setIsTeacherSigningIn(false);
+      window.localStorage.setItem('cute-science-temp-app-view-mode-v1', 'teacher');
+      window.localStorage.setItem(SESSION_STORAGE_KEY, session);
+      window.sessionStorage.setItem('cute-science-temp-app-teacher-auth-v1', '1');
+      window.location.href = window.location.pathname + '?mode=teacher&session=' + encodeURIComponent(session);
+      return;
+    }
+    if (chooserMode === 'student') {
+      const group = /^[1-6]$/.test(chooserGroup) ? chooserGroup : '1';
+      window.localStorage.setItem('cute-science-temp-app-view-mode-v1', 'student');
+      window.localStorage.setItem('cute-science-temp-app-student-group-v1', group);
+      window.localStorage.setItem(SESSION_STORAGE_KEY, session);
+      window.sessionStorage.removeItem('cute-science-temp-app-teacher-auth-v1');
+      window.location.href = window.location.pathname + '?mode=student&session=' + encodeURIComponent(session) + '&group=' + group;
     }
   };
 
-  useEffect(() => {
-    const handleResetRequest = (event) => {
-      if (!isTeacherMode || !isTeacherAuthenticated) {
-        setResetMessage('선생님 화면에서 인증 후 사용할 수 있습니다.');
-        return;
-      }
-      const requestedGroup = event?.detail?.groupId ? String(event.detail.groupId) : null;
-      setResetTargetGroup(['1','2','3','4','5','6'].includes(requestedGroup) ? requestedGroup : null);
-      setResetMessage('');
-      setShowResetModal(true);
-    };
+  const openModeChooser = () => {
+    setChooserMode('');
+    setTeacherPin('');
+    setTeacherAuthError('');
+    setChooserSession(SESSION_ID === 'DEFAULT' ? '' : SESSION_ID);
+    setShowModeChooser(true);
+  };
 
-    window.addEventListener('classroom-reset-request', handleResetRequest);
-    return () => window.removeEventListener('classroom-reset-request', handleResetRequest);
-  }, [isTeacherAuthenticated]);
+  const requestReset = (groupId = null) => {
+    if (viewMode !== 'teacher' || !isTeacherAuthenticated) return;
+    setResetTargetGroup(groupId);
+    setResetMessage('');
+    setShowResetModal(true);
+  };
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -591,7 +607,7 @@ export default function App() {
     const data = groupData[groupId];
     const isTimerRunning = !!data.timerStartTime;
 
-    if (!isTimerRunning && !hasAgreedSafety && !isTeacherMode) {
+    if (!isTimerRunning && !hasAgreedSafety && viewMode !== 'teacher') {
       setPendingTimerGroup(groupId);
       setShowGuideModal(true);
       return;
@@ -637,7 +653,7 @@ export default function App() {
   const resetClassroomRecords = async () => {
     if (isResetting) return;
 
-    if (!isTeacherMode || !isTeacherAuthenticated) {
+    if (viewMode !== 'teacher' || !isTeacherAuthenticated) {
       setResetMessage('선생님 화면에서 인증 후 사용할 수 있습니다.');
       return;
     }
@@ -741,6 +757,23 @@ export default function App() {
   };
 
   return (
+      {showModeChooser && (
+        <ModeChooser
+          mode={chooserMode}
+          session={chooserSession}
+          group={chooserGroup}
+          pin={teacherPin}
+          error={teacherAuthError}
+          onTeacher={() => { setChooserMode('teacher'); setTeacherAuthError(''); }}
+          onStudent={() => { setChooserMode('student'); setTeacherAuthError(''); }}
+          onSessionChange={(value) => { setChooserSession(value); setTeacherAuthError(''); }}
+          onGroupChange={setChooserGroup}
+          onPinChange={(value) => { setTeacherPin(value); setTeacherAuthError(''); }}
+          onStart={startSelectedMode}
+          makeCode={makeSessionCode}
+        />
+      )}
+
     <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 p-4 sm:p-6 md:p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-8">
         <header className="text-center relative space-y-6 pt-4">
@@ -755,29 +788,26 @@ export default function App() {
             </h1>
           </div>
           
-          {!isTeacherMode && (
-            <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
-              <div className="bg-white text-slate-700 px-6 py-4 rounded-3xl text-sm md:text-base font-bold shadow-md border-b-4 border-slate-200">
-                💡 모둠별 <strong className="text-blue-500">타이머 시작</strong> 버튼을 누르면 정해진 시간에 띠링! 소리가 나요.
+          {viewMode === 'teacher' ? (
+            <div className="flex flex-wrap justify-center items-center gap-3">
+              <div className="bg-white text-slate-700 px-5 py-3 rounded-3xl text-sm font-black shadow-md border-b-4 border-slate-200">👩‍🏫 선생님 화면 · 1~6모둠 전체</div>
+              <div className="bg-rose-50 border-2 border-rose-100 rounded-2xl px-3 py-2 flex items-center gap-2 flex-wrap justify-center">
+                <span className="text-xs font-black text-rose-700">🧹 초기화</span>
+                {[1,2,3,4,5,6].map(g => <button key={g} onClick={() => requestReset(String(g))} className="bg-white hover:bg-rose-100 text-rose-700 px-3 py-2 rounded-xl text-xs font-black border border-rose-200">{g}모둠</button>)}
               </div>
-              <button 
-                onClick={() => setShowRoleModal(true)}
-                className="bg-indigo-100 text-indigo-800 hover:bg-indigo-200 px-6 py-4 rounded-3xl inline-flex items-center gap-2 text-sm md:text-base font-extrabold shadow-md border-b-4 border-indigo-300 active:translate-y-1 active:border-b-0 transition-all"
-              >
-                <span className="text-xl">👥</span> 모둠 역할 설정
-              </button>
-              <button 
-                onClick={() => setShowThermometerModal(true)}
-                className="bg-yellow-100 text-yellow-800 hover:bg-yellow-200 px-6 py-4 rounded-3xl inline-flex items-center gap-2 text-sm md:text-base font-extrabold shadow-md border-b-4 border-yellow-300 active:translate-y-1 active:border-b-0 transition-all"
-              >
-                <span className="text-xl">📖</span> 탐침 온도계 사용법
-              </button>
+              <button onClick={() => requestReset(null)} className="bg-rose-500 hover:bg-rose-600 text-white px-4 py-3 rounded-2xl text-sm font-black shadow-md">전체 초기화</button>
+              <button onClick={openModeChooser} className="bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-3 rounded-2xl text-sm font-black">🔄 화면 변경</button>
             </div>
-          )}
-        </header>
+          ) : (
+            <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
+              <div className="bg-white text-slate-700 px-6 py-4 rounded-3xl text-sm md:text-base font-bold shadow-md border-b-4 border-slate-200">💡 모둠별 <strong className="text-blue-500">타이머 시작</strong> 버튼을 누르면 정해진 시간에 띠링! 소리가 나요.</div>
+              <button onClick={() => setShowRoleModal(true)} className="bg-indigo-100 text-indigo-800 hover:bg-indigo-200 px-6 py-4 rounded-3xl inline-flex items-center gap-2 text-sm md:text-base font-extrabold shadow-md border-b-4 border-indigo-300"><span className="text-xl">👥</span> 모둠 역할 설정</button>
+              <button onClick={() => setShowThermometerModal(true)} className="bg-yellow-100 text-yellow-800 hover:bg-yellow-200 px-6 py-4 rounded-3xl inline-flex items-center gap-2 text-sm md:text-base font-extrabold shadow-md border-b-4 border-yellow-300"><span className="text-xl">📖</span> 탐침 온도계 사용법</button>
+            </div>
+          )}        </header>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {Object.entries(groupData).map(([groupId, data]) => {
+          {Object.entries(groupData).filter(([groupId]) => viewMode === 'teacher' || groupId === studentGroup).map(([groupId, data]) => {
             const local = localTimers[groupId] || { elapsed: 0 };
             const isTimerRunning = !!data.timerStartTime;
             const style = GROUP_STYLES[(groupId - 1) % GROUP_STYLES.length];
@@ -913,50 +943,6 @@ export default function App() {
           })}
         </div>
       </div>
-
-      {showTeacherLogin && teacherLoginReady && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[80] flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] max-w-md w-full p-8 md:p-10 shadow-2xl border-8 border-indigo-100 text-center">
-            <div className="text-5xl mb-4">👩‍🏫</div>
-            <h2 className="text-2xl md:text-3xl font-black text-slate-800 mb-2">선생님 인증</h2>
-            <p className="text-slate-500 font-bold mb-6 leading-relaxed">
-              선생님 화면을 사용하려면<br /><span className="text-indigo-600">숫자 4자리 비밀번호</span>를 입력해 주세요.
-            </p>
-
-            <form onSubmit={handleTeacherLogin} className="space-y-3">
-              <input
-                type="password"
-                value={teacherPin}
-                onChange={e => setTeacherPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                placeholder="● ● ● ●"
-                inputMode="numeric"
-                pattern="[0-9]{4}"
-                maxLength={4}
-                autoFocus
-                className="w-full text-center tracking-[0.7em] text-3xl bg-white border-2 border-slate-200 rounded-2xl px-4 py-4 font-black outline-none focus:border-indigo-400"
-              />
-
-              {teacherAuthError && (
-                <div className="p-3 rounded-2xl bg-rose-50 border-2 border-rose-100 text-rose-600 font-bold text-sm">
-                  {teacherAuthError}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={isTeacherSigningIn || teacherPin.length !== 4}
-                className="w-full bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-300 text-white px-6 py-3.5 rounded-full font-black text-lg shadow-md"
-              >
-                {isTeacherSigningIn ? '확인 중...' : '선생님 화면 열기 🔐'}
-              </button>
-            </form>
-
-            <p className="mt-5 text-xs text-slate-400 font-bold">
-              학생 기기는 학생 화면을 선택하면 비밀번호 없이 사용할 수 있습니다.
-            </p>
-          </div>
-        </div>
-      )}
 
       {showResetModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[60] flex items-center justify-center p-4">
