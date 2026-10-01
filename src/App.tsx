@@ -373,7 +373,6 @@ export default function App() {
     if (!restored) setQuizState(initial.quiz);
 
     if (firebaseConfig.apiKey === "YOUR_API_KEY") {
-      setTeacherLoginReady(true);
       return;
     }
 
@@ -381,7 +380,6 @@ export default function App() {
       const app = initializeApp(firebaseConfig);
       const auth = getAuth(app);
       const db = getFirestore(app);
-      authRef.current = auth;
       dbRef.current = db;
 
       let unsubscribeSnapshot = null;
@@ -410,7 +408,6 @@ export default function App() {
       };
 
       unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-        setTeacherLoginReady(true);
 
         if (user) {
           startSnapshot();
