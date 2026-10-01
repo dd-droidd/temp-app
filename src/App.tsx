@@ -634,7 +634,7 @@ export default function App() {
 
   return (
     <>
-      <ModeChooser
+      {!viewMode && <ModeChooser
         mode={chooserMode}
         session={chooserSession}
         group={studentGroup}
@@ -647,7 +647,7 @@ export default function App() {
         onPinChange={(v) => { setTeacherPin(v); setTeacherAuthError(''); }}
         onStart={startSelectedMode}
         makeCode={() => '수업1'}
-      />
+      />}
       <div className="min-h-screen bg-gradient-to-br from-pink-50 via-purple-50 to-blue-50 p-4 sm:p-6 md:p-8 font-sans">
       <div className="max-w-7xl mx-auto space-y-8">
         <header className="text-center relative space-y-6 pt-4">
