@@ -469,16 +469,18 @@ export default function App() {
     } catch(e) {}
 
     const current = groupDataRef.current[groupId] || createInitialGroup(Number(groupId));
-    const nextGroup = { ...current, timerStartTime: Date.now(), timerElapsed: 0 };
+    const pausedElapsed = Number(current.timerElapsed || 0);
+    const startTime = Date.now() - (pausedElapsed * 1000);
+    const nextGroup = { ...current, timerStartTime: startTime };
     const updatedGroupData = { ...groupDataRef.current, [groupId]: nextGroup };
 
     setGroupData(updatedGroupData);
     groupDataRef.current = updatedGroupData;
     setLocalTimers(prev => ({
       ...prev,
-      [groupId]: { elapsed: 0, lastDingTime: -1 }
+      [groupId]: { elapsed: pausedElapsed, lastDingTime: -1 }
     }));
-    await persistGroup(groupId, { timerStartTime: nextGroup.timerStartTime, timerElapsed: 0 });
+    await persistGroup(groupId, { timerStartTime: startTime, timerElapsed: pausedElapsed });
   };
 
   const stopTimer = async (groupId) => {
@@ -768,24 +770,23 @@ export default function App() {
                       {Math.floor(local.elapsed / 60).toString().padStart(2, '0')}:{(local.elapsed % 60).toString().padStart(2, '0')}
                     </span>
                     <div className="flex items-center gap-2 flex-wrap justify-center">
-                      {!isTimerRunning ? (
-                        <button
-                          onClick={() => toggleTimer(groupId)}
-                          className="px-5 py-3 rounded-2xl text-sm font-extrabold shadow-md border-b-4 active:translate-y-1 active:border-b-0 transition-all bg-sky-400 text-white border-sky-600 hover:bg-sky-500"
-                        >
-                          ▶️ 시작
-                        </button>
-                      ) : (
-                        <button
-                          onClick={() => stopTimer(groupId)}
-                          className="px-5 py-3 rounded-2xl text-sm font-extrabold shadow-md border-b-4 active:translate-y-1 active:border-b-0 transition-all bg-rose-400 text-white border-rose-600 hover:bg-rose-500"
-                        >
-                          ⏹️ 정지하기
-                        </button>
-                      )}
+                      <button
+                        onClick={() => startRealTimer(groupId)}
+                        disabled={isTimerRunning}
+                        className="px-4 py-3 rounded-2xl text-sm font-extrabold shadow-md border-b-4 active:translate-y-1 active:border-b-0 transition-all bg-sky-400 text-white border-sky-600 hover:bg-sky-500 disabled:bg-slate-300 disabled:border-slate-400 disabled:cursor-not-allowed"
+                      >
+                        ▶️ 시작
+                      </button>
+                      <button
+                        onClick={() => stopTimer(groupId)}
+                        disabled={!isTimerRunning}
+                        className="px-4 py-3 rounded-2xl text-sm font-extrabold shadow-md border-b-4 active:translate-y-1 active:border-b-0 transition-all bg-rose-400 text-white border-rose-600 hover:bg-rose-500 disabled:bg-slate-200 disabled:text-slate-400 disabled:border-slate-300 disabled:cursor-not-allowed"
+                      >
+                        ⏹️ 정지하기
+                      </button>
                       <button
                         onClick={() => resetTimer(groupId)}
-                        className="px-4 py-2.5 rounded-2xl text-xs font-extrabold bg-slate-100 text-slate-700 border-2 border-slate-200 hover:bg-slate-200 shadow-sm"
+                        className="px-4 py-3 rounded-2xl text-sm font-extrabold bg-slate-100 text-slate-700 border-2 border-slate-300 hover:bg-slate-200 shadow-sm"
                       >
                         🔄 초기화하기
                       </button>
