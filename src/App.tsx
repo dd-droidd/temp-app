@@ -524,44 +524,6 @@ export default function App() {
   };
 
   const startSelectedMode = () => {
-    const session = chooserSession.trim();
-    if (!session) {
-      setTeacherAuthError('수업 코드를 입력해 주세요.');
-      return;
-    }
-    if (chooserMode === 'teacher') {
-      if (teacherPin !== '2468') {
-        setTeacherAuthError('선생님 PIN은 4자리 숫자 2468입니다.');
-        return;
-      }
-      setViewMode('teacher');
-      setIsTeacherAuthenticated(true);
-      setShowGuideModal(false);
-      setTeacherAuthError('');
-      return;
-    }
-    if (chooserMode === 'student') {
-      setViewMode('student');
-      setStudentGroup(/^[1-6]$/.test(studentGroup) ? studentGroup : '1');
-      setShowGuideModal(true);
-      setTeacherAuthError('');
-    }
-  };
-
-  const openModeChooser = () => {
-    setChooserMode('');
-    setTeacherPin('');
-    setTeacherAuthError('');
-  };
-
-  const requestReset = (groupId = null) => {
-    if (viewMode !== 'teacher' || !isTeacherAuthenticated) return;
-    setResetTargetGroup(groupId);
-    setResetMessage('');
-    setShowResetModal(true);
-  };
-
-  const startSelectedMode = () => {
     const session = normalizeSessionId(chooserSession);
     if (!session || session === 'DEFAULT') {
       setTeacherAuthError('수업 코드를 입력해 주세요.');
@@ -577,6 +539,7 @@ export default function App() {
       setActiveSession(session);
       setViewMode('teacher');
       setIsTeacherAuthenticated(true);
+      setShowModeChooser(false);
       setShowGuideModal(false);
       setTeacherAuthError('');
       return;
@@ -587,12 +550,15 @@ export default function App() {
       setActiveSession(session);
       setViewMode('student');
       setStudentGroup(group);
+      setShowModeChooser(false);
       setShowGuideModal(true);
       setTeacherAuthError('');
     }
   };
 
   const openModeChooser = () => {
+    setViewMode('');
+    setIsTeacherAuthenticated(false);
     setChooserMode('');
     setTeacherPin('');
     setTeacherAuthError('');
