@@ -309,8 +309,12 @@ export default function App() {
   });
   const [showModeChooser, setShowModeChooser] = useState(() => {
     if (typeof window === 'undefined') return true;
-    const params = new URLSearchParams(window.location.search);
-    return params.get('mode') !== 'teacher' && params.get('mode') !== 'student';
+    const justSelected = window.sessionStorage.getItem('cute-science-temp-app-mode-selected-once-v1') === '1';
+    if (justSelected) {
+      window.sessionStorage.removeItem('cute-science-temp-app-mode-selected-once-v1');
+      return false;
+    }
+    return true;
   });
   const [chooserMode, setChooserMode] = useState('');
   const [chooserSession, setChooserSession] = useState(() => {
@@ -448,6 +452,7 @@ export default function App() {
       window.localStorage.setItem('cute-science-temp-app-view-mode-v1', 'teacher');
       window.localStorage.setItem(SESSION_STORAGE_KEY, session);
       window.sessionStorage.setItem('cute-science-temp-app-teacher-auth-v1', '1');
+      window.sessionStorage.setItem('cute-science-temp-app-mode-selected-once-v1', '1');
       window.location.href = window.location.pathname + '?mode=teacher&session=' + encodeURIComponent(session);
       return;
     }
@@ -457,6 +462,7 @@ export default function App() {
       window.localStorage.setItem('cute-science-temp-app-student-group-v1', group);
       window.localStorage.setItem(SESSION_STORAGE_KEY, session);
       window.sessionStorage.removeItem('cute-science-temp-app-teacher-auth-v1');
+      window.sessionStorage.setItem('cute-science-temp-app-mode-selected-once-v1', '1');
       window.location.href = window.location.pathname + '?mode=student&session=' + encodeURIComponent(session) + '&group=' + group;
     }
   };
