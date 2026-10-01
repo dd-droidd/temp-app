@@ -874,12 +874,14 @@ export default function App() {
                       >
                         ⏹️ 정지하기
                       </button>
-                      <button
-                        onClick={() => resetTimer(groupId)}
-                        className="px-4 py-3 rounded-2xl text-sm font-extrabold bg-slate-100 text-slate-700 border-2 border-slate-300 hover:bg-slate-200 shadow-sm"
-                      >
-                        🔄 초기화하기
-                      </button>
+                      {viewMode === 'teacher' && (
+                        <button
+                          onClick={() => resetTimer(groupId)}
+                          className="px-4 py-3 rounded-2xl text-sm font-extrabold bg-slate-100 text-slate-700 border-2 border-slate-300 hover:bg-slate-200 shadow-sm"
+                        >
+                          🔄 초기화하기
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
