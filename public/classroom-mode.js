@@ -25,14 +25,26 @@
     return code;
   };
 
+  const urlParams = new URLSearchParams(location.search);
+  const urlMode = urlParams.get('mode') === 'teacher' || urlParams.get('mode') === 'student'
+    ? urlParams.get('mode')
+    : '';
+  const urlSession = normalizeSessionId(urlParams.get('session') || '');
   const savedSession = normalizeSessionId(localStorage.getItem(SESSION_KEY) || '');
-  if (savedSession) window.__SCIENCE_SESSION_ID__ = savedSession;
+  const initialSession = urlSession || savedSession;
+
+  if (initialSession) {
+    localStorage.setItem(SESSION_KEY, initialSession);
+    window.__SCIENCE_SESSION_ID__ = initialSession;
+  }
+  if (urlMode) localStorage.setItem(MODE_KEY, urlMode);
 
   const state = {
-    mode: localStorage.getItem(MODE_KEY) || '',
-    group: GROUPS.includes(localStorage.getItem(GROUP_KEY) || '') ? localStorage.getItem(GROUP_KEY) : '1',
-    session: savedSession
+    mode: urlMode || localStorage.getItem(MODE_KEY) || '',
+    group: GROUPS.includes(urlParams.get('group') || '') ? urlParams.get('group') : (GROUPS.includes(localStorage.getItem(GROUP_KEY) || '') ? localStorage.getItem(GROUP_KEY) : '1'),
+    session: initialSession
   };
+  window.__SCIENCE_VIEW_MODE__ = state.mode;
 
   const style = document.createElement('style');
   style.textContent = `
@@ -124,12 +136,18 @@
     localStorage.setItem(MODE_KEY, state.mode);
     localStorage.setItem(GROUP_KEY, state.group);
     window.__SCIENCE_SESSION_ID__ = session;
+    window.__SCIENCE_VIEW_MODE__ = mode || state.mode;
     return true;
   }
 
   function reloadWithSelection(sessionId, mode, group) {
     if (!setSession(sessionId, mode, group)) return;
-    location.reload();
+    const next = new URL(location.href);
+    next.searchParams.set('mode', mode);
+    next.searchParams.set('session', state.session);
+    if (group) next.searchParams.set('group', group);
+    else next.searchParams.delete('group');
+    location.replace(next.toString());
   }
 
   function showPanel() {
