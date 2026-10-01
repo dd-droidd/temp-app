@@ -290,10 +290,15 @@ export default function App() {
   const [quizState, setQuizState] = useState({});
   const groupDataRef = useRef({}); 
   const [isConnected, setIsConnected] = useState(false);
-  const [isTeacherMode] = useState(() =>
-    typeof window !== 'undefined' &&
-    window.localStorage.getItem('cute-science-temp-app-view-mode-v1') === 'teacher'
-  );
+  const [isTeacherMode] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    const params = new URLSearchParams(window.location.search);
+    return (
+      params.get('mode') === 'teacher' ||
+      window.__SCIENCE_VIEW_MODE__ === 'teacher' ||
+      window.localStorage.getItem('cute-science-temp-app-view-mode-v1') === 'teacher'
+    );
+  });
   const [isTeacherAuthenticated, setIsTeacherAuthenticated] = useState(false);
   const [teacherLoginReady, setTeacherLoginReady] = useState(false);
   const [showTeacherLogin, setShowTeacherLogin] = useState(isTeacherMode);
