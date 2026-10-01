@@ -453,10 +453,10 @@ export default function App() {
 
   const isInputUnlocked = (groupId, index) => {
     const data = groupData[groupId];
-    const local = localTimers[groupId] || { elapsed: 0 };
-    if (index === 0) return true; 
-    if (!data?.timerStartTime) return false; 
+    const local = localTimers[groupId] || { elapsed: Number(data?.timerElapsed || 0) };
+    if (index === 0) return true;
     const unlockTime = index === 1 ? 30 : (index - 1) * 60;
+    // 타이머가 정지되어 있어도 이미 열린 시간칸은 계속 입력할 수 있습니다.
     return local.elapsed >= unlockTime;
   };
 
