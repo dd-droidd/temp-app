@@ -423,7 +423,7 @@ export default function App() {
         if (unsubscribeAuth) unsubscribeAuth();
       };
     } catch (e) {
-      setTeacherLoginReady(true);
+      setIsConnected(false);
     }
   }, []);
 
