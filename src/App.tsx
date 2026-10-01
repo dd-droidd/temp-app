@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { initializeApp } from "firebase/app";
-import { getAuth, signInAnonymously } from "firebase/auth";
+import { getAuth, signInAnonymously, signInWithEmailAndPassword, onAuthStateChanged } from "firebase/auth";
 import { getFirestore, doc, setDoc, collection, onSnapshot } from "firebase/firestore";
 import {
   Chart as ChartJS,
@@ -286,7 +286,19 @@ export default function App() {
   const [quizState, setQuizState] = useState({});
   const groupDataRef = useRef({}); 
   const [isConnected, setIsConnected] = useState(false);
+  const [isTeacherMode] = useState(() =>
+    typeof window !== 'undefined' &&
+    window.localStorage.getItem('cute-science-temp-app-view-mode-v1') === 'teacher'
+  );
+  const [isTeacherAuthenticated, setIsTeacherAuthenticated] = useState(false);
+  const [teacherLoginReady, setTeacherLoginReady] = useState(false);
+  const [showTeacherLogin, setShowTeacherLogin] = useState(isTeacherMode);
+  const [teacherEmail, setTeacherEmail] = useState('');
+  const [teacherPassword, setTeacherPassword] = useState('');
+  const [teacherAuthError, setTeacherAuthError] = useState('');
+  const [isTeacherSigningIn, setIsTeacherSigningIn] = useState(false);
   const dbRef = useRef(null);
+  const authRef = useRef(null);
 
   const [showGuideModal, setShowGuideModal] = useState(true); // 처음 시작 시 안전 수칙 모달 표시
   const [showThermometerModal, setShowThermometerModal] = useState(false);
@@ -334,19 +346,51 @@ export default function App() {
     setLocalTimers(initial.timers);
     if (!restored) setQuizState(initial.quiz);
 
-    if (firebaseConfig.apiKey === "YOUR_API_KEY") return;
+    if (firebaseConfig.apiKey === "YOUR_API_KEY") {
+      setTeacherLoginReady(!isTeacherMode);
+      return;
+    }
 
     try {
       const app = initializeApp(firebaseConfig);
       const auth = getAuth(app);
       const db = getFirestore(app);
+      authRef.current = auth;
       dbRef.current = db;
 
-      let unsubscribe = null;
-      signInAnonymously(auth).then(() => {
+      let unsubscribeSnapshot = null;
+      let unsubscribeAuth = null;
+
+      unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
+        const teacher = !!user && !user.isAnonymous;
+        setIsTeacherAuthenticated(teacher);
+        setTeacherLoginReady(true);
+
+        if (isTeacherMode) {
+          if (teacher) {
+            setShowTeacherLogin(false);
+            setIsConnected(true);
+          } else {
+            setShowTeacherLogin(true);
+            setIsConnected(false);
+          }
+          return;
+        }
+
+        if (!user) {
+          try {
+            await signInAnonymously(auth);
+          } catch (e) {}
+        } else {
+          setIsConnected(true);
+        }
+      });
+
+      const startSnapshot = () => {
+        if (unsubscribeSnapshot) return;
         setIsConnected(true);
         const collRef = getGroupCollection(db);
-        unsubscribe = onSnapshot(collRef, (snapshot) => {
+        unsubscribeSnapshot = onSnapshot(collRef, (snapshot) => {
           const newData = { ...groupDataRef.current };
           const nextQuiz = {};
           snapshot.docs.forEach(docSnap => {
@@ -362,14 +406,64 @@ export default function App() {
             window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ data: newData, quiz: { ...quizState, ...nextQuiz } }));
           } catch (e) {}
         });
-      }).catch(() => {});
+      };
 
-      return () => { if (unsubscribe) unsubscribe(); };
-    } catch (e) {}
-  }, []);
+      const snapshotWaiter = onAuthStateChanged(auth, (user) => {
+        if (user && (!isTeacherMode || !user.isAnonymous)) {
+          startSnapshot();
+        }
+      });
+
+      return () => {
+        if (unsubscribeSnapshot) unsubscribeSnapshot();
+        if (unsubscribeAuth) unsubscribeAuth();
+        snapshotWaiter();
+      };
+    } catch (e) {
+      setTeacherLoginReady(true);
+    }
+  }, [isTeacherMode]);
+
+  const handleTeacherLogin = async (event) => {
+    event?.preventDefault();
+    if (!authRef.current) {
+      setTeacherAuthError('Firebase 인증 준비가 아직 끝나지 않았습니다.');
+      return;
+    }
+
+    const email = teacherEmail.trim();
+    if (!email || !teacherPassword) {
+      setTeacherAuthError('선생님 계정 이메일과 비밀번호를 입력해 주세요.');
+      return;
+    }
+
+    setIsTeacherSigningIn(true);
+    setTeacherAuthError('');
+
+    try {
+      await signInWithEmailAndPassword(authRef.current, email, teacherPassword);
+      setTeacherPassword('');
+      setShowTeacherLogin(false);
+    } catch (e) {
+      const code = e?.code || '';
+      const messages = {
+        'auth/invalid-credential': '이메일 또는 비밀번호가 올바르지 않습니다.',
+        'auth/invalid-email': '이메일 형식을 확인해 주세요.',
+        'auth/operation-not-allowed': 'Firebase에서 이메일/비밀번호 로그인이 아직 켜지지 않았습니다.',
+        'auth/too-many-requests': '로그인 시도가 너무 많습니다. 잠시 후 다시 시도해 주세요.'
+      };
+      setTeacherAuthError(messages[code] || '선생님 로그인에 실패했습니다. Firebase 설정을 확인해 주세요.');
+    } finally {
+      setIsTeacherSigningIn(false);
+    }
+  };
 
   useEffect(() => {
     const handleResetRequest = (event) => {
+      if (!isTeacherAuthenticated) {
+        setResetMessage('초기화 기능은 선생님 로그인 후 사용할 수 있습니다.');
+        return;
+      }
       const requestedGroup = event?.detail?.groupId ? String(event.detail.groupId) : null;
       setResetTargetGroup(['1','2','3','4','5','6'].includes(requestedGroup) ? requestedGroup : null);
       setResetMessage('');
@@ -378,7 +472,7 @@ export default function App() {
 
     window.addEventListener('classroom-reset-request', handleResetRequest);
     return () => window.removeEventListener('classroom-reset-request', handleResetRequest);
-  }, []);
+  }, [isTeacherAuthenticated]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -553,6 +647,11 @@ export default function App() {
 
   const resetClassroomRecords = async () => {
     if (isResetting) return;
+
+    if (!isTeacherAuthenticated) {
+      setResetMessage('선생님 로그인 상태에서만 초기화할 수 있습니다.');
+      return;
+    }
 
     setIsResetting(true);
     setResetMessage('');
@@ -823,6 +922,55 @@ export default function App() {
           })}
         </div>
       </div>
+
+      {showTeacherLogin && teacherLoginReady && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[80] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] max-w-md w-full p-8 md:p-10 shadow-2xl border-8 border-indigo-100 text-center">
+            <div className="text-5xl mb-4">👩‍🏫</div>
+            <h2 className="text-2xl md:text-3xl font-black text-slate-800 mb-2">선생님 로그인</h2>
+            <p className="text-slate-500 font-bold mb-6 leading-relaxed">
+              선생님 화면과 모둠 기록 초기화 기능을 사용하려면<br />선생님 계정으로 로그인해 주세요.
+            </p>
+
+            <form onSubmit={handleTeacherLogin} className="space-y-3 text-left">
+              <input
+                type="email"
+                value={teacherEmail}
+                onChange={e => setTeacherEmail(e.target.value)}
+                placeholder="선생님 이메일"
+                autoComplete="username"
+                className="w-full bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 font-bold outline-none focus:border-indigo-400"
+              />
+              <input
+                type="password"
+                value={teacherPassword}
+                onChange={e => setTeacherPassword(e.target.value)}
+                placeholder="비밀번호"
+                autoComplete="current-password"
+                className="w-full bg-white border-2 border-slate-200 rounded-2xl px-4 py-3 font-bold outline-none focus:border-indigo-400"
+              />
+
+              {teacherAuthError && (
+                <div className="p-3 rounded-2xl bg-rose-50 border-2 border-rose-100 text-rose-600 font-bold text-sm">
+                  {teacherAuthError}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isTeacherSigningIn}
+                className="w-full bg-indigo-500 hover:bg-indigo-600 disabled:bg-slate-300 text-white px-6 py-3.5 rounded-full font-black text-lg shadow-md"
+              >
+                {isTeacherSigningIn ? '로그인 중...' : '선생님으로 로그인 🔐'}
+              </button>
+            </form>
+
+            <p className="mt-5 text-xs text-slate-400 font-bold">
+              학생 기기는 로그인 없이 학생 화면으로 사용할 수 있습니다.
+            </p>
+          </div>
+        </div>
+      )}
 
       {showResetModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[60] flex items-center justify-center p-4">
