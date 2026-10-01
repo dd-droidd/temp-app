@@ -273,6 +273,9 @@ export default function App() {
   const [quizAnswers, setQuizAnswers] = useState({ ans1: '', ans2: '' });
   const [quizFeedback, setQuizFeedback] = useState('');
   const [pendingTimerGroup, setPendingTimerGroup] = useState(null);
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetMessage, setResetMessage] = useState('');
 
   useEffect(() => {
     const initial = createInitialState();
@@ -337,6 +340,16 @@ export default function App() {
 
       return () => { if (unsubscribe) unsubscribe(); };
     } catch (e) {}
+  }, []);
+
+  useEffect(() => {
+    const handleResetRequest = () => {
+      setResetMessage('');
+      setShowResetModal(true);
+    };
+
+    window.addEventListener('classroom-reset-request', handleResetRequest);
+    return () => window.removeEventListener('classroom-reset-request', handleResetRequest);
   }, []);
 
   useEffect(() => {
@@ -507,6 +520,65 @@ export default function App() {
     if (pendingTimerGroup) {
       startRealTimer(pendingTimerGroup, false);
       setPendingTimerGroup(null);
+    }
+  };
+
+  const resetAllClassroomRecords = async () => {
+    if (isResetting) return;
+
+    setIsResetting(true);
+    setResetMessage('');
+
+    const initial = createInitialState();
+
+    try {
+      // 이 기기의 화면도 즉시 초기화합니다.
+      setGroupData(initial.data);
+      groupDataRef.current = initial.data;
+      setLocalTimers(initial.timers);
+      setQuizState(initial.quiz);
+      setActiveQuizGroup(null);
+      setQuizAnswers({ ans1: '', ans2: '' });
+      setQuizFeedback('');
+
+      window.localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({ data: initial.data, quiz: initial.quiz })
+      );
+
+      // Firebase에 저장된 1~6모둠의 기록도 함께 초기화합니다.
+      if (isConnected && dbRef.current) {
+        for (let i = 1; i <= NUM_GROUPS; i++) {
+          const docRef = doc(
+            dbRef.current,
+            'artifacts',
+            APP_ID,
+            'public',
+            'data',
+            COLLECTION_NAME,
+            i.toString()
+          );
+
+          await setDoc(docRef, {
+            ...initial.data[i],
+            quizCompleted: false
+          });
+        }
+      } else {
+        throw new Error('Firebase 연결이 준비되지 않았습니다.');
+      }
+
+      setShowRoleModal(false);
+      setShowGuideModal(true);
+      setIsSafetyChecked(false);
+      setHasAgreedSafety(false);
+      setPendingTimerGroup(null);
+      setShowResetModal(false);
+      setResetMessage('새 반 수업을 시작할 수 있도록 모든 모둠 기록을 초기화했습니다.');
+    } catch (e) {
+      setResetMessage('초기화에 실패했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.');
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -704,6 +776,50 @@ export default function App() {
           })}
         </div>
       </div>
+
+      {showResetModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[60] flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2.5rem] max-w-lg w-full p-8 md:p-10 shadow-2xl border-8 border-rose-100 text-center relative">
+            <div className="inline-block bg-rose-100 p-4 rounded-full mb-4">
+              <span className="text-5xl">🧹</span>
+            </div>
+
+            <h2 className="text-2xl md:text-3xl font-black text-slate-800 mb-3">
+              학생 기록을 모두 초기화할까요?
+            </h2>
+
+            <p className="text-slate-600 font-bold leading-relaxed mb-6">
+              1~6모둠의 온도 기록, 타이머, 역할, 결론 퀴즈 기록이 모두 지워집니다.
+              <br />
+              <span className="text-rose-600">새 반 수업을 시작할 때 사용하세요.</span>
+            </p>
+
+            {resetMessage && (
+              <div className="mb-5 p-4 rounded-2xl bg-slate-50 border-2 border-slate-200 font-bold text-slate-700">
+                {resetMessage}
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <button
+                onClick={() => { setShowResetModal(false); setResetMessage(''); }}
+                disabled={isResetting}
+                className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-7 py-3.5 rounded-full font-black text-lg"
+              >
+                취소
+              </button>
+
+              <button
+                onClick={resetAllClassroomRecords}
+                disabled={isResetting}
+                className="bg-rose-500 hover:bg-rose-600 disabled:bg-slate-300 text-white px-7 py-3.5 rounded-full font-black text-lg shadow-md border-b-4 border-rose-700 disabled:border-slate-400"
+              >
+                {isResetting ? '초기화 중...' : '정말 초기화하기 🧹'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showRoleModal && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
