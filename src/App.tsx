@@ -283,7 +283,7 @@ const GroupChart = ({ hotData, coldData, groupName }) => {
   );
 };
 
-const MOLECULES = [
+const PARTICLES = [
   [8,14],[15,34],[9,58],[21,76],[29,23],[33,49],[37,69],[27,88],
   [43,13],[46,35],[40,57],[47,78],
   [58,26],[65,48],[60,67],[68,86],
@@ -297,11 +297,11 @@ const moleculeColor = (start, progress) => {
   return `rgb(${Math.round(lerp(start[0], gray[0], progress))}, ${Math.round(lerp(start[1], gray[1], progress))}, ${Math.round(lerp(start[2], gray[2], progress))})`;
 };
 
-const MoleculeEquilibriumModal = ({ groupName, onClose }) => {
+const ParticleEquilibriumModal = ({ groupName, onClose }) => {
   const [progress, setProgress] = useState(0);
   const [restartKey, setRestartKey] = useState(0);
   const positionsRef = useRef(
-    MOLECULES.map(([x, y], i) => ({
+    PARTICLES.map(([x, y], i) => ({
       x,
       y,
       vx: i < 12 ? (i % 2 ? 1 : -1) : 0.45,
@@ -316,8 +316,8 @@ const MoleculeEquilibriumModal = ({ groupName, onClose }) => {
     let raf = 0;
 
     const tick = (now) => {
-      const elapsed = Math.min(12000, now - startedAt);
-      const nextProgress = elapsed / 12000;
+      const elapsed = Math.max(0, now - startedAt);
+      const nextProgress = Math.min(1, elapsed / 20000);
       setProgress(nextProgress);
 
       const targetHotSpeed = 3.0;
@@ -357,7 +357,7 @@ const MoleculeEquilibriumModal = ({ groupName, onClose }) => {
 
       frame++;
       if (frame % 2 === 0) forceRender(v => v + 1);
-      if (elapsed < 12000) raf = requestAnimationFrame(tick);
+      raf = requestAnimationFrame(tick);
     };
 
     raf = requestAnimationFrame(tick);
@@ -365,7 +365,7 @@ const MoleculeEquilibriumModal = ({ groupName, onClose }) => {
   }, [restartKey]);
 
   const restart = () => {
-    positionsRef.current = MOLECULES.map(([x, y], i) => ({
+    positionsRef.current = PARTICLES.map(([x, y], i) => ({
       x,
       y,
       vx: i < 12 ? (i % 2 ? 1 : -1) : 0.45,
@@ -386,10 +386,10 @@ const MoleculeEquilibriumModal = ({ groupName, onClose }) => {
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-sm font-black text-indigo-600 mb-1">🌡️ {groupName} · 개념 확인</div>
-            <h2 className="text-2xl md:text-3xl font-black text-slate-800">열평형을 분자 모형으로 알아보기</h2>
+            <h2 className="text-2xl md:text-3xl font-black text-slate-800">열평형을 아주 작은 알갱이 모형으로 알아보기</h2>
             <p className="text-slate-500 font-bold mt-2 text-sm md:text-base">
-              처음에는 온도가 높은 분자가 더 빠르게, 낮은 분자가 더 느리게 움직입니다.
-              시간이 지나면 움직임과 색이 서로 비슷해지는 모습을 관찰해 보세요.
+              처음에는 온도가 높은 아주 작은 알갱이가 더 빠르게, 낮은 아주 작은 알갱이가 더 느리게 움직입니다.
+              시간이 지나면 움직임과 색이 점점 비슷해지는 모습을 관찰해 보세요.
             </p>
           </div>
           <button
@@ -411,13 +411,13 @@ const MoleculeEquilibriumModal = ({ groupName, onClose }) => {
               className="absolute top-3 left-3 px-3 py-1.5 rounded-full bg-rose-100 text-rose-700 font-black text-xs md:text-sm shadow-sm"
               style={{ opacity: 1 - progress * 0.7 }}
             >
-              🔥 처음: 온도가 높은 분자 · 빠름
+              🔥 처음: 온도가 높은 아주 작은 알갱이 · 빠름
             </div>
             <div
               className="absolute top-3 right-3 px-3 py-1.5 rounded-full bg-sky-100 text-sky-700 font-black text-xs md:text-sm shadow-sm"
               style={{ opacity: 1 - progress * 0.7 }}
             >
-              🧊 처음: 온도가 낮은 분자 · 느림
+              🧊 처음: 온도가 낮은 아주 작은 알갱이 · 느림
             </div>
 
             <div
@@ -462,10 +462,10 @@ const MoleculeEquilibriumModal = ({ groupName, onClose }) => {
               style={{ opacity: 0.65 + progress * 0.35 }}
             >
               {progress < 0.25
-                ? '뜨거운 분자 🔴 빠르게 움직임 · 차가운 분자 🔵 천천히 움직임'
+                ? '뜨거운 아주 작은 알갱이 🔴 빠르게 움직임 · 차가운 아주 작은 알갱이 🔵 천천히 움직임'
                 : progress < 0.7
-                  ? '시간이 지나면서 분자의 움직임과 색이 점점 비슷해짐'
-                  : '열평형에 가까워짐 · 분자의 움직임과 온도가 비슷해짐'}
+                  ? '시간이 지나면서 아주 작은 알갱이의 움직임과 색이 점점 비슷해짐'
+                  : '열평형 상태 · 아주 작은 알갱이의 움직임과 온도가 비슷함'}
             </div>
           </div>
         </div>
@@ -1591,7 +1591,7 @@ export default function App() {
       )}
 
       {activeMoleculeGroup && groupData[activeMoleculeGroup] && (
-        <MoleculeEquilibriumModal
+        <ParticleEquilibriumModal
           groupName={groupData[activeMoleculeGroup].name}
           onClose={() => setActiveMoleculeGroup(null)}
         />
