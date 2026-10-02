@@ -283,6 +283,211 @@ const GroupChart = ({ hotData, coldData, groupName }) => {
   );
 };
 
+const MOLECULES = [
+  [8,14],[15,34],[9,58],[21,76],[29,23],[33,49],[37,69],[27,88],
+  [43,13],[48,35],[45,57],[52,78],[59,26],[62,48],[60,67],[68,86],
+  [75,15],[81,36],[74,58],[84,74],[91,28],[88,50],[92,68],[79,90]
+];
+
+const lerp = (a, b, t) => a + (b - a) * t;
+
+const moleculeColor = (start, progress) => {
+  const gray = [148, 163, 184];
+  return `rgb(${Math.round(lerp(start[0], gray[0], progress))}, ${Math.round(lerp(start[1], gray[1], progress))}, ${Math.round(lerp(start[2], gray[2], progress))})`;
+};
+
+const MoleculeEquilibriumModal = ({ groupName, onClose }) => {
+  const [progress, setProgress] = useState(0);
+  const [restartKey, setRestartKey] = useState(0);
+  const positionsRef = useRef(
+    MOLECULES.map(([x, y], i) => ({
+      x,
+      y,
+      vx: i < 12 ? (i % 2 ? 1 : -1) : 0.45,
+      vy: i % 3 === 0 ? 0.7 : -0.55
+    }))
+  );
+  const [, forceRender] = useState(0);
+
+  useEffect(() => {
+    const startedAt = performance.now();
+    let frame = 0;
+    let raf = 0;
+
+    const tick = (now) => {
+      const elapsed = Math.min(12000, now - startedAt);
+      const nextProgress = elapsed / 12000;
+      setProgress(nextProgress);
+
+      const targetHotSpeed = 3.0;
+      const targetColdSpeed = 1.0;
+      const equilibriumSpeed = 1.9;
+      const hotSpeed = lerp(targetHotSpeed, equilibriumSpeed, nextProgress);
+      const coldSpeed = lerp(targetColdSpeed, equilibriumSpeed, nextProgress);
+      const motion = positionsRef.current;
+
+      motion.forEach((m, i) => {
+        const isHot = i < 12;
+        const speed = isHot ? hotSpeed : coldSpeed;
+
+        m.x += m.vx * speed * 0.42;
+        m.y += m.vy * speed * 0.42;
+
+        // 초반에는 뜨거운 물/차가운 물 영역에 머물고, 이후에는 경계가 사라진 것처럼 전체 공간을 이동한다.
+        const boundary = 50;
+        const allowCrossing = nextProgress > 0.25;
+
+        if (!allowCrossing) {
+          if (isHot && m.x > boundary - 2) {
+            m.x = boundary - 2;
+            m.vx *= -1;
+          }
+          if (!isHot && m.x < boundary + 2) {
+            m.x = boundary + 2;
+            m.vx *= -1;
+          }
+        }
+
+        if (m.x < 4) { m.x = 4; m.vx = Math.abs(m.vx); }
+        if (m.x > 96) { m.x = 96; m.vx = -Math.abs(m.vx); }
+        if (m.y < 7) { m.y = 7; m.vy = Math.abs(m.vy); }
+        if (m.y > 93) { m.y = 93; m.vy = -Math.abs(m.vy); }
+      });
+
+      frame++;
+      if (frame % 2 === 0) forceRender(v => v + 1);
+      if (elapsed < 12000) raf = requestAnimationFrame(tick);
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [restartKey]);
+
+  const restart = () => {
+    positionsRef.current = MOLECULES.map(([x, y], i) => ({
+      x,
+      y,
+      vx: i < 12 ? (i % 2 ? 1 : -1) : 0.45,
+      vy: i % 3 === 0 ? 0.7 : -0.55
+    }));
+    setProgress(0);
+    setRestartKey(k => k + 1);
+  };
+
+  const red = [239, 68, 68];
+  const blue = [59, 130, 246];
+  const dividerOpacity = progress < 0.2 ? 1 : Math.max(0, 1 - (progress - 0.2) / 0.18);
+  const arrowOpacity = progress < 0.7 ? Math.max(0.12, 1 - progress / 0.72) : 0;
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[90] flex items-center justify-center p-4">
+      <div className="bg-white rounded-[2.5rem] max-w-4xl w-full p-6 md:p-8 shadow-2xl border-8 border-indigo-50 max-h-[92vh] overflow-y-auto">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-sm font-black text-indigo-600 mb-1">🌡️ {groupName} · 개념 확인</div>
+            <h2 className="text-2xl md:text-3xl font-black text-slate-800">열평형을 분자 모형으로 알아보기</h2>
+            <p className="text-slate-500 font-bold mt-2 text-sm md:text-base">
+              처음에는 온도가 높은 분자가 더 빠르게, 낮은 분자가 더 느리게 움직입니다.
+              시간이 지나면 움직임과 색이 서로 비슷해지는 모습을 관찰해 보세요.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="shrink-0 bg-slate-100 hover:bg-slate-200 text-slate-500 w-10 h-10 rounded-full font-black"
+            aria-label="닫기"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="mt-6 rounded-3xl border-4 border-slate-200 bg-slate-50 p-3 md:p-5">
+          <div className="relative h-[360px] md:h-[440px] rounded-2xl bg-white border-4 border-slate-300 overflow-hidden">
+            <div className="absolute inset-y-0 left-0 w-1/2 bg-rose-50/50" />
+            <div className="absolute inset-y-0 right-0 w-1/2 bg-sky-50/50" />
+
+            <div
+              className="absolute top-3 left-3 px-3 py-1.5 rounded-full bg-rose-100 text-rose-700 font-black text-xs md:text-sm shadow-sm"
+              style={{ opacity: 1 - progress * 0.7 }}
+            >
+              🔥 처음: 온도가 높은 분자 · 빠름
+            </div>
+            <div
+              className="absolute top-3 right-3 px-3 py-1.5 rounded-full bg-sky-100 text-sky-700 font-black text-xs md:text-sm shadow-sm"
+              style={{ opacity: 1 - progress * 0.7 }}
+            >
+              🧊 처음: 온도가 낮은 분자 · 느림
+            </div>
+
+            <div
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-rose-500 font-black text-sm md:text-base whitespace-nowrap"
+              style={{ opacity: arrowOpacity }}
+            >
+              열의 이동 →
+            </div>
+
+            <div
+              className="absolute top-0 bottom-0 left-1/2 border-l-4 border-dashed border-slate-300"
+              style={{ opacity: dividerOpacity }}
+            />
+
+            {positionsRef.current.map((m, i) => {
+              const isHot = i < 12;
+              const color = moleculeColor(isHot ? red : blue, progress);
+              const speedScale = isHot
+                ? lerp(1.0, 0.72, progress)
+                : lerp(0.62, 0.72, progress);
+              const size = 18 + (i % 3) * 2;
+
+              return (
+                <div
+                  key={i}
+                  className="absolute rounded-full shadow-md"
+                  style={{
+                    left: m.x + '%',
+                    top: m.y + '%',
+                    width: size,
+                    height: size,
+                    background: `radial-gradient(circle at 35% 30%, #fff 0%, ${color} 22%, ${color} 72%, rgba(15,23,42,.16) 100%)`,
+                    transform: `translate(-50%, -50%) scale(${speedScale})`,
+                    transition: 'background 80ms linear',
+                  }}
+                />
+              );
+            })}
+
+            <div
+              className="absolute bottom-3 left-1/2 -translate-x-1/2 px-4 py-2 rounded-full bg-slate-100 border border-slate-300 text-slate-700 font-black text-sm md:text-base"
+              style={{ opacity: 0.65 + progress * 0.35 }}
+            >
+              {progress < 0.25
+                ? '뜨거운 분자 🔴 빠르게 움직임 · 차가운 분자 🔵 천천히 움직임'
+                : progress < 0.7
+                  ? '시간이 지나면서 분자의 움직임과 색이 점점 비슷해짐'
+                  : '열평형에 가까워짐 · 분자의 움직임과 온도가 비슷해짐'}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3 text-sm font-black text-slate-600">
+            <span className="inline-flex items-center gap-1.5"><span className="w-4 h-4 rounded-full bg-rose-500" /> 처음: 높은 온도</span>
+            <span className="inline-flex items-center gap-1.5"><span className="w-4 h-4 rounded-full bg-sky-500" /> 처음: 낮은 온도</span>
+            <span className="inline-flex items-center gap-1.5"><span className="w-4 h-4 rounded-full bg-slate-400" /> 나중: 비슷한 상태</span>
+          </div>
+          <button
+            type="button"
+            onClick={restart}
+            className="bg-indigo-500 hover:bg-indigo-600 text-white px-5 py-2.5 rounded-full font-black shadow-md"
+          >
+            ▶️ 다시 보기
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function App() {
   const [groupData, setGroupData] = useState({});
   const [localTimers, setLocalTimers] = useState({});
@@ -309,6 +514,7 @@ export default function App() {
   const [selectedRoleGroup, setSelectedRoleGroup] = useState('1'); 
   const [hasAgreedSafety, setHasAgreedSafety] = useState(false);
   const [activeQuizGroup, setActiveQuizGroup] = useState(null);
+  const [activeMoleculeGroup, setActiveMoleculeGroup] = useState(null);
   const [quizAnswers, setQuizAnswers] = useState({ ans1: '', ans2: '' });
   const [quizFeedback, setQuizFeedback] = useState('');
   const [pendingTimerGroup, setPendingTimerGroup] = useState(null);
@@ -1091,6 +1297,26 @@ export default function App() {
                   </table>
                 </div>
 
+                <div className="mx-5 mb-5 p-4 rounded-2xl bg-indigo-50 border-2 border-indigo-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="text-left">
+                    <div className="font-black text-indigo-900">🔬 열평형 분자 모형</div>
+                    <div className="text-xs md:text-sm font-bold text-indigo-700 mt-1">
+                      {allFilled ? '실험 기록이 완료되어 잠금이 해제되었습니다.' : '실험 기록을 모두 입력하면 잠금이 해제됩니다.'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={!allFilled}
+                    onClick={() => setActiveMoleculeGroup(groupId)}
+                    className={'px-5 py-3 rounded-full font-black text-sm md:text-base shadow-md border-b-4 transition-all whitespace-nowrap ' +
+                      (allFilled
+                        ? 'bg-indigo-500 hover:bg-indigo-600 text-white border-indigo-700 active:translate-y-1 active:border-b-0'
+                        : 'bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed')}
+                  >
+                    {allFilled ? '🔓 분자 모형 보기' : '🔒 측정 완료 후 열림'}
+                  </button>
+                </div>
+
                 {allFilled && (
                   <div className="mx-5 mb-5 p-4 rounded-2xl bg-slate-50 border-2 border-slate-200 flex items-center justify-between">
                     <span className="font-extrabold text-slate-700 text-sm">
@@ -1357,6 +1583,13 @@ export default function App() {
             </div>
           </div>
         </div>
+      )}
+
+      {activeMoleculeGroup && groupData[activeMoleculeGroup] && (
+        <MoleculeEquilibriumModal
+          groupName={groupData[activeMoleculeGroup].name}
+          onClose={() => setActiveMoleculeGroup(null)}
+        />
       )}
 
       {activeQuizGroup && (
