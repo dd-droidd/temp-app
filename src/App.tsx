@@ -1302,19 +1302,23 @@ export default function App() {
                   <div className="text-left">
                     <div className="font-black text-indigo-900">🔬 열평형 분자 모형</div>
                     <div className="text-xs md:text-sm font-bold text-indigo-700 mt-1">
-                      {allFilled ? '실험 기록이 완료되어 잠금이 해제되었습니다.' : '실험 기록을 모두 입력하면 잠금이 해제됩니다.'}
+                      {viewMode === 'teacher'
+                        ? '선생님 화면에서는 실험 기록과 관계없이 바로 확인할 수 있습니다.'
+                        : allFilled
+                          ? '실험 기록이 완료되어 잠금이 해제되었습니다.'
+                          : '실험 기록을 모두 입력하면 잠금이 해제됩니다.'}
                     </div>
                   </div>
                   <button
                     type="button"
-                    disabled={!allFilled}
+                    disabled={viewMode !== 'teacher' && !allFilled}
                     onClick={() => setActiveMoleculeGroup(groupId)}
                     className={'px-5 py-3 rounded-full font-black text-sm md:text-base shadow-md border-b-4 transition-all whitespace-nowrap ' +
-                      (allFilled
+                      (viewMode === 'teacher' || allFilled
                         ? 'bg-indigo-500 hover:bg-indigo-600 text-white border-indigo-700 active:translate-y-1 active:border-b-0'
                         : 'bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed')}
                   >
-                    {allFilled ? '🔓 분자 모형 보기' : '🔒 측정 완료 후 열림'}
+                    {viewMode === 'teacher' || allFilled ? '🔓 분자 모형 보기' : '🔒 측정 완료 후 열림'}
                   </button>
                 </div>
 
