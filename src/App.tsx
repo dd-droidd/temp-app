@@ -1300,7 +1300,7 @@ export default function App() {
 
                 <div className="mx-5 mb-5 p-4 rounded-2xl bg-indigo-50 border-2 border-indigo-100 flex flex-col sm:flex-row items-center justify-between gap-3">
                   <div className="text-left">
-                    <div className="font-black text-indigo-900">🔬 열평형 분자 모형</div>
+                    <div className="font-black text-indigo-900">🔬 열평형 작은 알갱이 모형</div>
                     <div className="text-xs md:text-sm font-bold text-indigo-700 mt-1">
                       {viewMode === 'teacher'
                         ? '선생님 화면에서는 실험 기록과 관계없이 바로 확인할 수 있습니다.'
@@ -1318,7 +1318,7 @@ export default function App() {
                         ? 'bg-indigo-500 hover:bg-indigo-600 text-white border-indigo-700 active:translate-y-1 active:border-b-0'
                         : 'bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed')}
                   >
-                    {viewMode === 'teacher' || allFilled ? '🔓 분자 모형 보기' : '🔒 측정 완료 후 열림'}
+                    {viewMode === 'teacher' || allFilled ? '🔓 작은 알갱이 모형 보기' : '🔒 측정 완료 후 열림'}
                   </button>
                 </div>
 
