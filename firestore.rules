@@ -13,6 +13,9 @@ service cloud.firestore {
           'timerStartTime',
           'timerElapsed',
           'members',
+          'predictionCold',
+          'predictionHot',
+          'predictionReason',
           'quizCompleted'
         ]);
 
