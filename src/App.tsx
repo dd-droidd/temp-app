@@ -72,6 +72,9 @@ const createInitialGroup = (i) => ({
   coldWater: Array(10).fill(''),
   timerStartTime: null,
   timerElapsed: 0,
+  predictionCold: '',
+  predictionHot: '',
+  predictionReason: '',
   members: [
     { name: '', role: '기록자' },
     { name: '', role: '온도측정자' },
@@ -534,6 +537,15 @@ export default function App() {
     await persistGroup(groupId, nextGroup);
   };
 
+  const handlePredictionChange = async (groupId, field, value) => {
+    const current = groupDataRef.current[groupId] || createInitialGroup(Number(groupId));
+    const nextGroup = { ...current, [field]: value };
+    const updatedData = { ...groupDataRef.current, [groupId]: nextGroup };
+    setGroupData(updatedData);
+    groupDataRef.current = updatedData;
+    await persistGroup(groupId, { [field]: value });
+  };
+
   const startRealTimer = async (groupId) => {
     try {
       if (!globalAudioCtx) globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -922,6 +934,86 @@ export default function App() {
                       )}
                     </div>
                   </div>
+                </div>
+
+                <div className="mx-5 mt-3 mb-2 p-5 rounded-3xl bg-amber-50 border-2 border-amber-200">
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+                    <div>
+                      <div className="text-base md:text-lg font-black text-amber-900">🔮 활동 1. 온도 변화 예상하기</div>
+                      <p className="text-xs md:text-sm text-amber-800/80 font-bold mt-1">실험하기 전에 두 물의 온도가 어떻게 변할지 생각해 봅시다.</p>
+                    </div>
+                    {(data.predictionCold || data.predictionHot || data.predictionReason.trim()) && (
+                      <span className="px-3 py-1.5 rounded-full bg-white border border-amber-200 text-amber-700 text-xs font-black">예상 기록 있음</span>
+                    )}
+                  </div>
+
+                  {viewMode === 'student' ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {[
+                          {
+                            field: 'predictionCold',
+                            title: '🧊 차가운 물은?',
+                            value: data.predictionCold,
+                            options: ['올라간다', '내려간다', '비슷하게 유지된다']
+                          },
+                          {
+                            field: 'predictionHot',
+                            title: '🔥 따뜻한 물은?',
+                            value: data.predictionHot,
+                            options: ['올라간다', '내려간다', '비슷하게 유지된다']
+                          }
+                        ].map(item => (
+                          <div key={item.field} className="bg-white rounded-2xl p-3 border-2 border-amber-100">
+                            <div className="font-black text-slate-700 mb-2">{item.title}</div>
+                            <div className="flex flex-wrap gap-2">
+                              {item.options.map(option => (
+                                <button
+                                  key={option}
+                                  type="button"
+                                  onClick={() => handlePredictionChange(groupId, item.field, option)}
+                                  className={'px-3 py-2 rounded-xl border-2 text-xs md:text-sm font-black transition-all ' +
+                                    (item.value === option
+                                      ? 'bg-amber-200 text-amber-900 border-amber-400 ring-2 ring-amber-300'
+                                      : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-amber-50 hover:border-amber-200')}
+                                >
+                                  {option}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="bg-white rounded-2xl p-3 border-2 border-amber-100">
+                        <label className="block font-black text-slate-700 mb-2">💭 왜 그렇게 생각했나요?</label>
+                        <textarea
+                          value={data.predictionReason}
+                          onChange={e => handlePredictionChange(groupId, 'predictionReason', e.target.value)}
+                          placeholder="예상한 까닭을 자유롭게 적어 보세요."
+                          rows={3}
+                          className="w-full resize-none bg-amber-50/40 border-2 border-amber-100 rounded-xl px-3 py-2.5 text-sm font-bold text-slate-700 outline-none focus:border-amber-300"
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="bg-white rounded-2xl p-3 border-2 border-amber-100">
+                          <div className="text-xs font-black text-slate-500 mb-1">🧊 차가운 물 예상</div>
+                          <div className="font-black text-sky-700">{data.predictionCold || '아직 입력하지 않았습니다.'}</div>
+                        </div>
+                        <div className="bg-white rounded-2xl p-3 border-2 border-amber-100">
+                          <div className="text-xs font-black text-slate-500 mb-1">🔥 따뜻한 물 예상</div>
+                          <div className="font-black text-rose-700">{data.predictionHot || '아직 입력하지 않았습니다.'}</div>
+                        </div>
+                      </div>
+                      <div className="bg-white rounded-2xl p-3 border-2 border-amber-100">
+                        <div className="text-xs font-black text-slate-500 mb-1">💭 예상한 까닭</div>
+                        <div className="font-bold text-slate-700 whitespace-pre-wrap">{data.predictionReason || '아직 입력하지 않았습니다.'}</div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="px-5 pt-4 pb-1 flex flex-wrap gap-2 items-center text-xs font-bold text-slate-600">
