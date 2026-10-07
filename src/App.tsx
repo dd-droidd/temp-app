@@ -1176,13 +1176,13 @@ export default function App() {
                             field: 'predictionCold',
                             title: '🧊 차가운 물은?',
                             value: data.predictionCold,
-                            options: ['올라간다', '내려간다', '비슷하게 유지된다']
+                            options: ['올라간다', '내려간다', '온도 변화가 없다']
                           },
                           {
                             field: 'predictionHot',
                             title: '🔥 따뜻한 물은?',
                             value: data.predictionHot,
-                            options: ['올라간다', '내려간다', '비슷하게 유지된다']
+                            options: ['올라간다', '내려간다', '온도 변화가 없다']
                           }
                         ].map(item => (
                           <div key={item.field} className="bg-white rounded-2xl p-3 border-2 border-amber-100">
