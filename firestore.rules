@@ -12,6 +12,7 @@ service cloud.firestore {
           'coldWater',
           'timerStartTime',
           'timerElapsed',
+          'timerUpdatedAt',
           'members',
           'predictionCold',
           'predictionHot',
