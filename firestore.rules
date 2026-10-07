@@ -16,6 +16,7 @@ service cloud.firestore {
           'predictionCold',
           'predictionHot',
           'predictionReason',
+          'particleModelUnlocked',
           'quizCompleted'
         ]);
 
