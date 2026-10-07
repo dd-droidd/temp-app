@@ -75,6 +75,7 @@ const createInitialGroup = (i) => ({
   predictionCold: '',
   predictionHot: '',
   predictionReason: '',
+  particleModelUnlocked: false,
   members: [
     { name: '', role: '기록자' },
     { name: '', role: '온도측정자' },
@@ -704,6 +705,19 @@ export default function App() {
     return hotFilled && coldFilled;
   };
 
+  const unlockParticleModel = async (groupId) => {
+    if (viewMode !== 'teacher' || !isTeacherAuthenticated) return;
+
+    const current = groupDataRef.current[groupId] || createInitialGroup(Number(groupId));
+    if (current.particleModelUnlocked) return;
+
+    const nextGroup = { ...current, particleModelUnlocked: true };
+    const updatedGroupData = { ...groupDataRef.current, [groupId]: nextGroup };
+    setGroupData(updatedGroupData);
+    groupDataRef.current = updatedGroupData;
+    await persistGroup(groupId, { particleModelUnlocked: true });
+  };
+
   const persistGroup = async (groupId, groupValue, extra = {}) => {
     try {
       const next = { ...groupDataRef.current[groupId], ...groupValue };
@@ -1303,23 +1317,40 @@ export default function App() {
                     <div className="font-black text-indigo-900">🔬 열평형 작은 알갱이 모형</div>
                     <div className="text-xs md:text-sm font-bold text-indigo-700 mt-1">
                       {viewMode === 'teacher'
-                        ? '선생님 화면에서는 실험 기록과 관계없이 바로 확인할 수 있습니다.'
-                        : allFilled
-                          ? '실험 기록이 완료되어 잠금이 해제되었습니다.'
-                          : '실험 기록을 모두 입력하면 잠금이 해제됩니다.'}
+                        ? (data.particleModelUnlocked
+                          ? '학생 화면에서도 이 모둠의 작은 알갱이 모형이 열려 있습니다.'
+                          : '이 모둠의 학생에게만 작은 알갱이 모형을 열어 줄 수 있습니다.')
+                        : (data.particleModelUnlocked
+                          ? '선생님이 작은 알갱이 모형을 열어 주셨습니다.'
+                          : '선생님이 열어 줄 때까지 잠겨 있습니다.')}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    disabled={viewMode !== 'teacher' && !allFilled}
-                    onClick={() => setActiveMoleculeGroup(groupId)}
-                    className={'px-5 py-3 rounded-full font-black text-sm md:text-base shadow-md border-b-4 transition-all whitespace-nowrap ' +
-                      (viewMode === 'teacher' || allFilled
-                        ? 'bg-indigo-500 hover:bg-indigo-600 text-white border-indigo-700 active:translate-y-1 active:border-b-0'
-                        : 'bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed')}
-                  >
-                    {viewMode === 'teacher' || allFilled ? '🔓 작은 알갱이 모형 보기' : '🔒 측정 완료 후 열림'}
-                  </button>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {viewMode === 'teacher' && (
+                      <button
+                        type="button"
+                        onClick={() => unlockParticleModel(groupId)}
+                        disabled={!!data.particleModelUnlocked}
+                        className={'px-4 py-3 rounded-full font-black text-sm md:text-base shadow-md border-b-4 transition-all whitespace-nowrap ' +
+                          (data.particleModelUnlocked
+                            ? 'bg-emerald-100 text-emerald-700 border-emerald-200 cursor-not-allowed'
+                            : 'bg-emerald-500 hover:bg-emerald-600 text-white border-emerald-700 active:translate-y-1 active:border-b-0')}
+                      >
+                        {data.particleModelUnlocked ? '✅ 학생에게 공개됨' : '🔓 학생 화면에서 열기'}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={viewMode !== 'teacher' && !data.particleModelUnlocked}
+                      onClick={() => setActiveMoleculeGroup(groupId)}
+                      className={'px-5 py-3 rounded-full font-black text-sm md:text-base shadow-md border-b-4 transition-all whitespace-nowrap ' +
+                        (viewMode === 'teacher' || data.particleModelUnlocked
+                          ? 'bg-indigo-500 hover:bg-indigo-600 text-white border-indigo-700 active:translate-y-1 active:border-b-0'
+                          : 'bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed')}
+                    >
+                      {viewMode === 'teacher' || data.particleModelUnlocked ? '🔓 작은 알갱이 모형 보기' : '🔒 선생님이 열어 주면 볼 수 있어요'}
+                    </button>
+                  </div>
                 </div>
 
                 {allFilled && (
