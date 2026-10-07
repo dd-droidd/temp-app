@@ -524,6 +524,7 @@ export default function App() {
   const [isResetting, setIsResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState('');
   const [resetTargetGroup, setResetTargetGroup] = useState(null);
+  const [clockTick, setClockTick] = useState(Date.now());
 
   useEffect(() => {
     quizStateRef.current = quizState;
@@ -604,7 +605,20 @@ export default function App() {
           snapshot.docs.forEach(docSnap => {
             const id = docSnap.id;
             const incoming = docSnap.data();
-            newData[id] = { ...createInitialGroup(Number(id)), ...newData[id], ...incoming };
+            const local = newData[id];
+            const merged = { ...createInitialGroup(Number(id)), ...local, ...incoming };
+
+            // 시작/정지 직후 Firebase의 이전 스냅샷이 도착하더라도
+            // 이 기기에서 방금 누른 타이머 상태를 잠시 유지합니다.
+            if (local?.timerStartTime && !incoming.timerStartTime) {
+              merged.timerStartTime = local.timerStartTime;
+              merged.timerElapsed = Number(local.timerElapsed || 0);
+            } else if (!local?.timerStartTime && Number(local?.timerElapsed || 0) > Number(incoming.timerElapsed || 0) && incoming.timerStartTime) {
+              merged.timerStartTime = null;
+              merged.timerElapsed = Number(local.timerElapsed || 0);
+            }
+
+            newData[id] = merged;
             if (typeof newData[id].timerElapsed !== 'number') newData[id].timerElapsed = 0;
             if (Object.prototype.hasOwnProperty.call(incoming, 'quizCompleted')) {
               nextQuiz[id] = !!incoming.quizCompleted;
@@ -635,6 +649,14 @@ export default function App() {
     } catch (e) {
       setIsConnected(false);
     }
+  }, [activeSession]);
+
+  useEffect(() => {
+    if (!activeSession) return;
+    const clockInterval = setInterval(() => {
+      setClockTick(Date.now());
+    }, 250);
+    return () => clearInterval(clockInterval);
   }, [activeSession]);
 
   useEffect(() => {
@@ -688,13 +710,21 @@ export default function App() {
     return () => clearInterval(interval);
   }, [activeSession]);
 
+  const getElapsedSeconds = (data) => {
+    if (!data) return 0;
+    if (data.timerStartTime) {
+      const diff = Math.floor((clockTick - Number(data.timerStartTime)) / 1000);
+      return Math.min(480, Math.max(0, Number.isFinite(diff) ? diff : 0));
+    }
+    return Math.min(480, Math.max(0, Number(data.timerElapsed || 0)));
+  };
+
   const isInputUnlocked = (groupId, index) => {
     const data = groupData[groupId];
-    const local = localTimers[groupId] || { elapsed: Number(data?.timerElapsed || 0) };
     if (index === 0) return true;
     const unlockTime = index === 1 ? 30 : (index - 1) * 60;
     // 타이머가 정지되어 있어도 이미 열린 시간칸은 계속 입력할 수 있습니다.
-    return local.elapsed >= unlockTime;
+    return getElapsedSeconds(data) >= unlockTime;
   };
 
   const isAllDataFilled = (groupId) => {
@@ -785,6 +815,7 @@ export default function App() {
       ...prev,
       [groupId]: { elapsed: pausedElapsed, lastDingTime: -1 }
     }));
+    setClockTick(Date.now());
     await persistGroup(groupId, { timerStartTime: startTime, timerElapsed: pausedElapsed });
   };
 
@@ -802,6 +833,7 @@ export default function App() {
       ...prev,
       [groupId]: { elapsed, lastDingTime: -1 }
     }));
+    setClockTick(Date.now());
     await persistGroup(groupId, { timerStartTime: null, timerElapsed: elapsed });
   };
 
@@ -816,6 +848,7 @@ export default function App() {
       ...prev,
       [groupId]: { elapsed: 0, lastDingTime: -1 }
     }));
+    setClockTick(Date.now());
     await persistGroup(groupId, { timerStartTime: null, timerElapsed: 0 });
   };
 
@@ -1108,7 +1141,7 @@ export default function App() {
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {Object.entries(groupData).filter(([groupId]) => viewMode === 'teacher' || groupId === studentGroup).map(([groupId, data]) => {
-            const local = localTimers[groupId] || { elapsed: 0 };
+            const local = { elapsed: getElapsedSeconds(data) };
             const isTimerRunning = !!data.timerStartTime;
             const style = GROUP_STYLES[(groupId - 1) % GROUP_STYLES.length];
             const allFilled = isAllDataFilled(groupId);
