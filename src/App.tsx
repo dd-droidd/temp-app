@@ -72,6 +72,7 @@ const createInitialGroup = (i) => ({
   coldWater: Array(10).fill(''),
   timerStartTime: null,
   timerElapsed: 0,
+  timerUpdatedAt: 0,
   predictionCold: '',
   predictionHot: '',
   predictionReason: '',
@@ -83,6 +84,43 @@ const createInitialGroup = (i) => ({
     { name: '', role: '시간확인자' }
   ]
 });
+
+const normalizeText = (value) => value == null ? '' : String(value);
+
+const normalizeTenValues = (value) =>
+  Array.from({ length: 10 }, (_, index) => normalizeText(Array.isArray(value) ? value[index] : ''));
+
+const normalizeMembers = (value) => {
+  const defaults = ['기록자', '온도측정자', '온도측정자', '시간확인자'];
+  return Array.from({ length: 4 }, (_, index) => {
+    const member = Array.isArray(value) && value[index] && typeof value[index] === 'object' ? value[index] : {};
+    const role = ['기록자', '온도측정자', '시간확인자'].includes(member.role) ? member.role : defaults[index];
+    return { name: normalizeText(member.name), role };
+  });
+};
+
+const normalizeGroup = (i, value = {}) => {
+  const base = createInitialGroup(i);
+  const merged = { ...base, ...(value && typeof value === 'object' ? value : {}) };
+  const startNumber = Number(merged.timerStartTime);
+  const elapsedNumber = Number(merged.timerElapsed);
+  const updatedAtNumber = Number(merged.timerUpdatedAt);
+
+  return {
+    ...merged,
+    name: normalizeText(merged.name) || base.name,
+    hotWater: normalizeTenValues(merged.hotWater),
+    coldWater: normalizeTenValues(merged.coldWater),
+    timerStartTime: Number.isFinite(startNumber) && startNumber > 0 ? startNumber : null,
+    timerElapsed: Number.isFinite(elapsedNumber) ? Math.min(480, Math.max(0, Math.floor(elapsedNumber))) : 0,
+    timerUpdatedAt: Number.isFinite(updatedAtNumber) && updatedAtNumber >= 0 ? updatedAtNumber : 0,
+    predictionCold: normalizeText(merged.predictionCold),
+    predictionHot: normalizeText(merged.predictionHot),
+    predictionReason: normalizeText(merged.predictionReason),
+    particleModelUnlocked: Boolean(merged.particleModelUnlocked),
+    members: normalizeMembers(merged.members)
+  };
+};
 
 const createInitialState = () => {
   const data = {};
@@ -493,6 +531,7 @@ const ParticleEquilibriumModal = ({ groupName, onClose }) => {
 export default function App() {
   const [groupData, setGroupData] = useState({});
   const [localTimers, setLocalTimers] = useState({});
+  const localTimersRef = useRef({});
   const [quizState, setQuizState] = useState({});
   const quizStateRef = useRef({});
   const groupDataRef = useRef({}); 
@@ -531,12 +570,17 @@ export default function App() {
   }, [quizState]);
 
   useEffect(() => {
+    localTimersRef.current = localTimers;
+  }, [localTimers]);
+
+  useEffect(() => {
     const initial = createInitialState();
 
     // 아직 수업 코드가 정해지지 않았다면 빈 화면 대신 기본 1~6모둠 상태만 준비합니다.
     if (!activeSession) {
       setGroupData(initial.data);
       groupDataRef.current = initial.data;
+      localTimersRef.current = initial.timers;
       setLocalTimers(initial.timers);
       setQuizState(initial.quiz);
       setIsConnected(false);
@@ -555,11 +599,7 @@ export default function App() {
         if (saved?.data) {
           const mergedData = { ...initial.data, ...saved.data };
           Object.keys(mergedData).forEach(id => {
-            mergedData[id] = { ...createInitialGroup(Number(id)), ...mergedData[id] };
-            if (!Array.isArray(mergedData[id].hotWater)) mergedData[id].hotWater = Array(10).fill('');
-            if (!Array.isArray(mergedData[id].coldWater)) mergedData[id].coldWater = Array(10).fill('');
-            if (!Array.isArray(mergedData[id].members)) mergedData[id].members = createInitialGroup(Number(id)).members;
-            if (typeof mergedData[id].timerElapsed !== 'number') mergedData[id].timerElapsed = 0;
+            mergedData[id] = normalizeGroup(Number(id), mergedData[id]);
           });
           setGroupData(mergedData);
           groupDataRef.current = mergedData;
@@ -578,6 +618,7 @@ export default function App() {
       groupDataRef.current = initial.data;
       setQuizState(initial.quiz);
     }
+    localTimersRef.current = initial.timers;
     setLocalTimers(initial.timers);
 
     if (firebaseConfig.apiKey === "YOUR_API_KEY") {
@@ -605,21 +646,20 @@ export default function App() {
           snapshot.docs.forEach(docSnap => {
             const id = docSnap.id;
             const incoming = docSnap.data();
-            const local = newData[id];
-            const merged = { ...createInitialGroup(Number(id)), ...local, ...incoming };
+            const local = normalizeGroup(Number(id), newData[id]);
+            const incomingGroup = normalizeGroup(Number(id), incoming);
+            const localTimerUpdatedAt = Number(local.timerUpdatedAt || 0);
+            const incomingTimerUpdatedAt = Number(incomingGroup.timerUpdatedAt || 0);
+            const merged = normalizeGroup(Number(id), { ...local, ...incomingGroup });
 
-            // 시작/정지 직후 Firebase의 이전 스냅샷이 도착하더라도
-            // 이 기기에서 방금 누른 타이머 상태를 잠시 유지합니다.
-            if (local?.timerStartTime && !incoming.timerStartTime) {
+            // 타이머는 마지막으로 변경한 시각이 더 최신인 쪽을 사용합니다.
+            if (localTimerUpdatedAt > incomingTimerUpdatedAt) {
               merged.timerStartTime = local.timerStartTime;
-              merged.timerElapsed = Number(local.timerElapsed || 0);
-            } else if (!local?.timerStartTime && Number(local?.timerElapsed || 0) > Number(incoming.timerElapsed || 0) && incoming.timerStartTime) {
-              merged.timerStartTime = null;
-              merged.timerElapsed = Number(local.timerElapsed || 0);
+              merged.timerElapsed = local.timerElapsed;
+              merged.timerUpdatedAt = local.timerUpdatedAt;
             }
 
             newData[id] = merged;
-            if (typeof newData[id].timerElapsed !== 'number') newData[id].timerElapsed = 0;
             if (Object.prototype.hasOwnProperty.call(incoming, 'quizCompleted')) {
               nextQuiz[id] = !!incoming.quizCompleted;
             }
@@ -662,49 +702,77 @@ export default function App() {
   useEffect(() => {
     const interval = setInterval(() => {
       const now = Date.now();
-      
-      setLocalTimers(prevTimers => {
-        const newTimers = { ...prevTimers };
-        let shouldPlaySound = false;
+      const currentTimers = localTimersRef.current || {};
+      const nextTimers = { ...currentTimers };
+      const autoStopGroups = [];
+      let shouldPlayDing = false;
+      let shouldPlayTada = false;
 
-        Object.entries(groupDataRef.current).forEach(([groupId, data]) => {
-          if (!newTimers[groupId]) newTimers[groupId] = { elapsed: 0, lastDingTime: -1 };
+      Object.entries(groupDataRef.current).forEach(([groupId, data]) => {
+        const existing = currentTimers[groupId] || {
+          elapsed: Number(data?.timerElapsed || 0),
+          lastDingTime: -1
+        };
 
-          if (data.timerStartTime) {
-            let diff = Math.floor((now - data.timerStartTime) / 1000);
-            if (diff < 0) diff = 0;
-            if (diff > 480) diff = 480; 
+        if (data?.timerStartTime) {
+          const rawDiff = Math.floor((now - Number(data.timerStartTime)) / 1000);
+          const diff = Math.min(480, Math.max(0, Number.isFinite(rawDiff) ? rawDiff : 0));
+          const nextTimer = { ...existing, elapsed: diff };
 
-            newTimers[groupId].elapsed = diff;
-
-            if (diff >= 480 && newTimers[groupId].lastDingTime !== 480) {
-              newTimers[groupId].lastDingTime = 480;
-              setTimeout(() => {
-                const latest = groupDataRef.current[groupId];
-                if (latest?.timerStartTime) {
-                  const stopped = { ...latest, timerStartTime: null, timerElapsed: 480 };
-                  const nextAll = { ...groupDataRef.current, [groupId]: stopped };
-                  groupDataRef.current = nextAll;
-                  setGroupData(nextAll);
-                  persistGroup(groupId, { timerStartTime: null, timerElapsed: 480 });
-                  playDing('tada');
-                }
-              }, 0);
-            }
-
-            if (TARGET_TIMES.includes(diff) && newTimers[groupId].lastDingTime !== diff) {
-              shouldPlaySound = true;
-              newTimers[groupId].lastDingTime = diff;
-            }
-          } else {
-            newTimers[groupId].elapsed = Number(data.timerElapsed || 0);
-            newTimers[groupId].lastDingTime = -1; 
+          if (diff >= 480 && existing.lastDingTime !== 480) {
+            nextTimer.lastDingTime = 480;
+            autoStopGroups.push(groupId);
+            shouldPlayTada = true;
+          } else if (TARGET_TIMES.includes(diff) && existing.lastDingTime !== diff) {
+            nextTimer.lastDingTime = diff;
+            shouldPlayDing = true;
           }
+
+          nextTimers[groupId] = nextTimer;
+        } else {
+          nextTimers[groupId] = {
+            elapsed: Math.min(480, Math.max(0, Number(data?.timerElapsed || 0))),
+            lastDingTime: -1
+          };
+        }
+      });
+
+      localTimersRef.current = nextTimers;
+      setLocalTimers(nextTimers);
+
+      if (autoStopGroups.length > 0) {
+        const stoppedAt = Date.now();
+        const nextAll = { ...groupDataRef.current };
+
+        autoStopGroups.forEach(groupId => {
+          const latest = normalizeGroup(Number(groupId), groupDataRef.current[groupId]);
+          if (!latest.timerStartTime) return;
+          nextAll[groupId] = normalizeGroup(Number(groupId), {
+            ...latest,
+            timerStartTime: null,
+            timerElapsed: 480,
+            timerUpdatedAt: stoppedAt
+          });
         });
 
-        if (shouldPlaySound) playDing('ding');
-        return newTimers;
-      });
+        groupDataRef.current = nextAll;
+        setGroupData(nextAll);
+        setClockTick(Date.now());
+
+        autoStopGroups.forEach(groupId => {
+          persistGroup(groupId, {
+            timerStartTime: null,
+            timerElapsed: 480,
+            timerUpdatedAt: stoppedAt
+          });
+        });
+      }
+
+      if (shouldPlayTada) {
+        playDing('tada');
+      } else if (shouldPlayDing) {
+        playDing('ding');
+      }
     }, 200);
 
     return () => clearInterval(interval);
@@ -755,7 +823,7 @@ export default function App() {
       groupDataRef.current = nextAll;
       window.localStorage.setItem(
         getStorageKey(activeSession),
-        JSON.stringify({ data: nextAll, quiz: quizState })
+        JSON.stringify({ data: nextAll, quiz: quizStateRef.current })
       );
     } catch (e) {}
 
@@ -803,10 +871,15 @@ export default function App() {
       if (globalAudioCtx.state === 'suspended') globalAudioCtx.resume();
     } catch(e) {}
 
-    const current = groupDataRef.current[groupId] || createInitialGroup(Number(groupId));
+    const current = normalizeGroup(Number(groupId), groupDataRef.current[groupId]);
     const pausedElapsed = Number(current.timerElapsed || 0);
-    const startTime = Date.now() - (pausedElapsed * 1000);
-    const nextGroup = { ...current, timerStartTime: startTime };
+    const updatedAt = Date.now();
+    const startTime = updatedAt - (pausedElapsed * 1000);
+    const nextGroup = normalizeGroup(Number(groupId), {
+      ...current,
+      timerStartTime: startTime,
+      timerUpdatedAt: updatedAt
+    });
     const updatedGroupData = { ...groupDataRef.current, [groupId]: nextGroup };
 
     setGroupData(updatedGroupData);
@@ -816,15 +889,21 @@ export default function App() {
       [groupId]: { elapsed: pausedElapsed, lastDingTime: -1 }
     }));
     setClockTick(Date.now());
-    await persistGroup(groupId, { timerStartTime: startTime, timerElapsed: pausedElapsed });
+    await persistGroup(groupId, { timerStartTime: startTime, timerElapsed: pausedElapsed, timerUpdatedAt: updatedAt });
   };
 
   const stopTimer = async (groupId) => {
-    const current = groupDataRef.current[groupId] || createInitialGroup(Number(groupId));
+    const current = normalizeGroup(Number(groupId), groupDataRef.current[groupId]);
     if (!current.timerStartTime) return;
 
-    const elapsed = Math.min(480, Math.max(0, Math.floor((Date.now() - current.timerStartTime) / 1000)));
-    const nextGroup = { ...current, timerStartTime: null, timerElapsed: elapsed };
+    const stoppedAt = Date.now();
+    const elapsed = Math.min(480, Math.max(0, Math.floor((stoppedAt - current.timerStartTime) / 1000)));
+    const nextGroup = normalizeGroup(Number(groupId), {
+      ...current,
+      timerStartTime: null,
+      timerElapsed: elapsed,
+      timerUpdatedAt: stoppedAt
+    });
     const updatedGroupData = { ...groupDataRef.current, [groupId]: nextGroup };
 
     setGroupData(updatedGroupData);
@@ -834,12 +913,18 @@ export default function App() {
       [groupId]: { elapsed, lastDingTime: -1 }
     }));
     setClockTick(Date.now());
-    await persistGroup(groupId, { timerStartTime: null, timerElapsed: elapsed });
+    await persistGroup(groupId, { timerStartTime: null, timerElapsed: elapsed, timerUpdatedAt: stoppedAt });
   };
 
   const resetTimer = async (groupId) => {
-    const current = groupDataRef.current[groupId] || createInitialGroup(Number(groupId));
-    const nextGroup = { ...current, timerStartTime: null, timerElapsed: 0 };
+    const current = normalizeGroup(Number(groupId), groupDataRef.current[groupId]);
+    const resetAt = Date.now();
+    const nextGroup = normalizeGroup(Number(groupId), {
+      ...current,
+      timerStartTime: null,
+      timerElapsed: 0,
+      timerUpdatedAt: resetAt
+    });
     const updatedGroupData = { ...groupDataRef.current, [groupId]: nextGroup };
 
     setGroupData(updatedGroupData);
@@ -849,7 +934,7 @@ export default function App() {
       [groupId]: { elapsed: 0, lastDingTime: -1 }
     }));
     setClockTick(Date.now());
-    await persistGroup(groupId, { timerStartTime: null, timerElapsed: 0 });
+    await persistGroup(groupId, { timerStartTime: null, timerElapsed: 0, timerUpdatedAt: resetAt });
   };
 
   const toggleTimer = (groupId) => {
@@ -971,6 +1056,10 @@ export default function App() {
       setViewMode('student');
       setStudentGroup(group);
       setSelectedRoleGroup(group);
+      setHasAgreedSafety(false);
+      setIsSafetyChecked(false);
+      setPendingTimerGroup(null);
+      setShowRoleModal(false);
       setShowGuideModal(true);
       setTeacherAuthError('');
     }
@@ -985,6 +1074,13 @@ export default function App() {
     setPinAttempts(0);
     setPinLockedUntil(0);
     setChooserSession(activeSession || '');
+    setShowGuideModal(false);
+    setShowThermometerModal(false);
+    setShowRoleModal(false);
+    setShowResetModal(false);
+    setPendingTimerGroup(null);
+    setHasAgreedSafety(false);
+    setIsSafetyChecked(false);
   };
 
   const requestReset = (groupId = null) => {
@@ -1001,55 +1097,101 @@ export default function App() {
     setIsResetting(true);
     setResetMessage('');
     const target = resetTargetGroup;
+    const resetAt = Date.now();
 
     try {
-      if (!isConnected || !dbRef.current) throw new Error('Firebase 연결이 준비되지 않았습니다.');
-
       if (target) {
-        const initialGroup = createInitialGroup(Number(target));
-        const docRef = getGroupDoc(dbRef.current, activeSession, target);
-        await setDoc(docRef, { ...initialGroup, quizCompleted: false });
+        const initialGroup = normalizeGroup(Number(target), {
+          ...createInitialGroup(Number(target)),
+          timerUpdatedAt: resetAt
+        });
+
         const nextAll = { ...groupDataRef.current, [target]: initialGroup };
         const nextQuiz = { ...quizStateRef.current, [target]: false };
         groupDataRef.current = nextAll;
         quizStateRef.current = nextQuiz;
         setGroupData(nextAll);
-        setLocalTimers(prev => ({ ...prev, [target]: { elapsed: 0, lastDingTime: -1 } }));
-        setQuizState(nextQuiz);
+
+        const nextLocalTimers = { ...localTimersRef.current, [target]: { elapsed: 0, lastDingTime: -1 } };
+        localTimersRef.current = nextLocalTimers;
+        setLocalTimers(nextLocalTimers);
+
         try {
           window.localStorage.setItem(
             getStorageKey(activeSession),
             JSON.stringify({ data: nextAll, quiz: nextQuiz })
           );
         } catch (e) {}
-        setShowResetModal(false);
-        setResetTargetGroup(null);
-        setResetMessage(target + '모둠 기록을 초기화했습니다.');
-      } else {
-        const initial = createInitialState();
-        for (let i = 1; i <= NUM_GROUPS; i++) {
-          const docRef = getGroupDoc(dbRef.current, activeSession, i);
-          await setDoc(docRef, { ...initial.data[i], quizCompleted: false });
+
+        let syncFailed = false;
+        if (isConnected && dbRef.current) {
+          try {
+            const docRef = getGroupDoc(dbRef.current, activeSession, target);
+            await setDoc(docRef, { ...initialGroup, quizCompleted: false }, { merge: false });
+          } catch (e) {
+            syncFailed = true;
+          }
         }
-        setGroupData(initial.data);
-        groupDataRef.current = initial.data;
-        setLocalTimers(initial.timers);
-        quizStateRef.current = initial.quiz;
-        setQuizState(initial.quiz);
-        try {
-          window.localStorage.setItem(
-            getStorageKey(activeSession),
-            JSON.stringify({ data: initial.data, quiz: initial.quiz })
-          );
-        } catch (e) {}
-        setShowRoleModal(false);
-        setShowGuideModal(false);
-        setResetTargetGroup(null);
+
         setShowResetModal(false);
-        setResetMessage('1~6모둠의 모든 기록을 초기화했습니다.');
+        setResetTargetGroup(null);
+        setResetMessage(
+          syncFailed
+            ? target + '모둠은 이 기기에서 초기화했습니다. 실시간 공유는 연결되지 않았습니다.'
+            : target + '모둠 기록을 초기화했습니다.'
+        );
+        return;
       }
+
+      const initial = createInitialState();
+      const versionedData = {};
+      for (let i = 1; i <= NUM_GROUPS; i++) {
+        versionedData[i] = normalizeGroup(i, {
+          ...initial.data[i],
+          timerUpdatedAt: resetAt
+        });
+      }
+
+      let firebaseOk = true;
+      if (isConnected && dbRef.current) {
+        try {
+          await Promise.all(
+            Array.from({ length: NUM_GROUPS }, (_, index) => {
+              const groupId = index + 1;
+              const docRef = getGroupDoc(dbRef.current, activeSession, groupId);
+              return setDoc(docRef, { ...versionedData[groupId], quizCompleted: false }, { merge: false });
+            })
+          );
+        } catch (e) {
+          firebaseOk = false;
+        }
+      }
+
+      localTimersRef.current = initial.timers;
+      setLocalTimers(initial.timers);
+      setGroupData(versionedData);
+      groupDataRef.current = versionedData;
+      quizStateRef.current = initial.quiz;
+      setQuizState(initial.quiz);
+
+      try {
+        window.localStorage.setItem(
+          getStorageKey(activeSession),
+          JSON.stringify({ data: versionedData, quiz: initial.quiz })
+        );
+      } catch (e) {}
+
+      setShowRoleModal(false);
+      setShowGuideModal(false);
+      setResetTargetGroup(null);
+      setShowResetModal(false);
+      setResetMessage(
+        firebaseOk
+          ? '1~6모둠의 모든 기록을 초기화했습니다.'
+          : '1~6모둠은 이 기기에서 초기화했습니다. 실시간 공유는 연결되지 않았습니다.'
+      );
     } catch (e) {
-      setResetMessage('초기화에 실패했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.');
+      setResetMessage('초기화 중 오류가 발생했습니다. 입력 기록은 유지되니 다시 시도해 주세요.');
     } finally {
       setIsResetting(false);
     }
@@ -1059,17 +1201,18 @@ export default function App() {
     if (quizAnswers.ans1 === '높은' && quizAnswers.ans2 === '낮은') {
       playDing('tada');
       setQuizFeedback('정답입니다! 🎉 열은 높은 온도에서 낮은 온도로 이동합니다.');
-      setQuizState(prev => {
-        const nextQuiz = { ...prev, [activeQuizGroup]: true };
-        try {
-          window.localStorage.setItem(
-            getStorageKey(activeSession),
-            JSON.stringify({ data: groupDataRef.current, quiz: nextQuiz })
-          );
-        } catch (e) {}
-        return nextQuiz;
-      });
-      
+
+      const nextQuiz = { ...quizStateRef.current, [activeQuizGroup]: true };
+      quizStateRef.current = nextQuiz;
+      setQuizState(nextQuiz);
+
+      try {
+        window.localStorage.setItem(
+          getStorageKey(activeSession),
+          JSON.stringify({ data: groupDataRef.current, quiz: nextQuiz })
+        );
+      } catch (e) {}
+
       if (isConnected && dbRef.current) {
         try {
           const docRef = getGroupDoc(dbRef.current, activeSession, activeQuizGroup);
@@ -1155,8 +1298,9 @@ export default function App() {
                     <input
                       type="text"
                       value={data.name}
+                      readOnly={viewMode !== 'teacher'}
                       onChange={(e) => handleInputChange(groupId, 'name', null, e.target.value)}
-                      className={`text-2xl font-black bg-transparent border-b-2 ${style.borderColor} outline-none w-32 pb-1 ${style.textColor}`}
+                      className={`text-2xl font-black bg-transparent border-b-2 ${style.borderColor} outline-none w-32 pb-1 ${style.textColor} ${viewMode === 'teacher' ? '' : 'cursor-default'}`}
                     />
                   </div>
                   <div className="flex items-center gap-3 bg-white/80 backdrop-blur-sm px-4 py-2 rounded-2xl shadow-sm border border-white">
