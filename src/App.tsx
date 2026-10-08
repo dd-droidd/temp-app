@@ -531,6 +531,7 @@ const ParticleEquilibriumModal = ({ groupName, onClose }) => {
 export default function App() {
   const [groupData, setGroupData] = useState({});
   const [localTimers, setLocalTimers] = useState({});
+  const firebaseWriteQueuesRef = useRef({});
   const localTimersRef = useRef({});
   const [quizState, setQuizState] = useState({});
   const quizStateRef = useRef({});
@@ -587,6 +588,7 @@ export default function App() {
       return;
     }
 
+    firebaseWriteQueuesRef.current = {};
     let restored = false;
     const storageKey = getStorageKey(activeSession);
     setQuizState(initial.quiz);
@@ -677,6 +679,9 @@ export default function App() {
               JSON.stringify({ data: newData, quiz: mergedQuiz })
             );
           } catch (e) {}
+        }, (error) => {
+          console.error('Firebase 실시간 동기화 실패:', error);
+          setIsConnected(false);
         });
       }).catch(() => {
         setIsConnected(false);
@@ -827,11 +832,30 @@ export default function App() {
       );
     } catch (e) {}
 
-    if (isConnected && dbRef.current) {
-      try {
-        const docRef = getGroupDoc(dbRef.current, activeSession, groupId);
-        await setDoc(docRef, { ...groupValue, ...extra }, { merge: true });
-      } catch(e) {}
+    if (!isConnected || !dbRef.current || !activeSession) return;
+
+    const targetSession = activeSession;
+    const targetDb = dbRef.current;
+    const payload = { ...groupValue, ...extra };
+    const previous = firebaseWriteQueuesRef.current[groupId] || Promise.resolve();
+
+    const nextWrite = previous
+      .catch(() => {})
+      .then(() => {
+        const docRef = getGroupDoc(targetDb, targetSession, groupId);
+        return setDoc(docRef, payload, { merge: true });
+      })
+      .catch((error) => {
+        console.error('Firebase 저장 실패:', error);
+      });
+
+    firebaseWriteQueuesRef.current[groupId] = nextWrite;
+    try {
+      await nextWrite;
+    } finally {
+      if (firebaseWriteQueuesRef.current[groupId] === nextWrite) {
+        delete firebaseWriteQueuesRef.current[groupId];
+      }
     }
   };
 
@@ -853,7 +877,8 @@ export default function App() {
     const updatedGroupData = { ...groupDataRef.current, [groupId]: nextGroup };
     setGroupData(updatedGroupData);
     groupDataRef.current = updatedGroupData;
-    await persistGroup(groupId, nextGroup);
+    const patch = type === 'name' ? { name: value } : { [type]: nextGroup[type] };
+    await persistGroup(groupId, patch);
   };
 
   const handlePredictionChange = async (groupId, field, value) => {
