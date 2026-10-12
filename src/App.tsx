@@ -41,6 +41,8 @@ const COLLECTION_NAME = 'temperature-data';
 const NUM_GROUPS = 6;
 const TIME_LABELS = ['처음', '30초', '1분', '2분', '3분', '4분', '5분', '6분', '7분', '8분'];
 const TARGET_TIMES = [30, 60, 120, 180, 240, 300, 360, 420, 480];
+const getLastPassedTarget = (elapsed: number) =>
+  TARGET_TIMES.filter(target => target < 480 && target <= elapsed).pop() ?? -1;
 
 const TEACHER_PIN_HASH = 'a1fb4e703a9ef1fa4936801721ff285a97ac85330856674412e054892afe6972';
 
@@ -643,8 +645,14 @@ export default function App() {
       groupDataRef.current = initial.data;
       setQuizState(initial.quiz);
     }
-    localTimersRef.current = initial.timers;
-    setLocalTimers(initial.timers);
+    const restoredTimers: LocalTimerMap = { ...initial.timers };
+    Object.entries(groupDataRef.current).forEach(([groupId, data]) => {
+      if (!data.timerStartTime) return;
+      const elapsed = Math.min(480, Math.max(0, Math.floor((Date.now() - Number(data.timerStartTime)) / 1000)));
+      restoredTimers[groupId] = { elapsed, lastDingTime: getLastPassedTarget(elapsed) };
+    });
+    localTimersRef.current = restoredTimers;
+    setLocalTimers(restoredTimers);
 
     if (firebaseConfig.apiKey === "YOUR_API_KEY") {
       setIsConnected(false);
@@ -670,12 +678,20 @@ export default function App() {
           if (cancelled) return;
           const newData = { ...groupDataRef.current };
           const nextQuiz = {};
+          const nextLocalTimers = { ...localTimersRef.current };
+          let seededRemoteTimer = false;
 
           snapshot.docs.forEach(docSnap => {
             const id = docSnap.id;
             const incoming = docSnap.data();
             const local = normalizeGroup(Number(id), newData[id]);
             const incomingGroup = normalizeGroup(Number(id), incoming);
+            // 다른 기기에서 이미 실행 중인 타이머를 처음 받았을 때 과거 알림을 다시 울리지 않습니다.
+            if (!local.timerStartTime && incomingGroup.timerStartTime) {
+              const elapsed = Math.min(480, Math.max(0, Math.floor((Date.now() - incomingGroup.timerStartTime) / 1000)));
+              nextLocalTimers[id] = { elapsed, lastDingTime: getLastPassedTarget(elapsed) };
+              seededRemoteTimer = true;
+            }
             const localTimerUpdatedAt = Number(local.timerUpdatedAt || 0);
             const incomingTimerUpdatedAt = Number(incomingGroup.timerUpdatedAt || 0);
             // Only merge fields that actually exist in Firestore. Normalizing first would
@@ -695,6 +711,10 @@ export default function App() {
             }
           });
 
+          if (seededRemoteTimer) {
+            localTimersRef.current = nextLocalTimers;
+            setLocalTimers(nextLocalTimers);
+          }
           setGroupData(newData);
           groupDataRef.current = newData;
           const mergedQuiz = { ...quizStateRef.current, ...nextQuiz };
@@ -979,12 +999,9 @@ export default function App() {
 
     setGroupData(updatedGroupData);
     groupDataRef.current = updatedGroupData;
-    const lastPassedTarget = TARGET_TIMES
-      .filter(target => target < 480 && target <= pausedElapsed)
-      .pop() ?? -1;
     setLocalTimers(prev => ({
       ...prev,
-      [groupId]: { elapsed: pausedElapsed, lastDingTime: lastPassedTarget }
+      [groupId]: { elapsed: pausedElapsed, lastDingTime: getLastPassedTarget(pausedElapsed) }
     }));
     setClockTick(Date.now());
     await persistGroup(groupId, { timerStartTime: startTime, timerElapsed: pausedElapsed, timerUpdatedAt: updatedAt });
