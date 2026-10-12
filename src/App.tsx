@@ -87,6 +87,14 @@ const createInitialGroup = (i) => ({
 
 const normalizeText = (value) => value == null ? '' : String(value);
 
+const normalizePrediction = (value) => {
+  const text = normalizeText(value).trim();
+  const compact = text.replace(/\\s/g, '');
+  return ['비슷하게유지된다', '온도변화가없다'].includes(compact)
+    ? '온도 변화가 없다'
+    : text;
+};
+
 const normalizeTenValues = (value) =>
   Array.from({ length: 10 }, (_, index) => normalizeText(Array.isArray(value) ? value[index] : ''));
 
@@ -114,8 +122,8 @@ const normalizeGroup = (i, value = {}) => {
     timerStartTime: Number.isFinite(startNumber) && startNumber > 0 ? startNumber : null,
     timerElapsed: Number.isFinite(elapsedNumber) ? Math.min(480, Math.max(0, Math.floor(elapsedNumber))) : 0,
     timerUpdatedAt: Number.isFinite(updatedAtNumber) && updatedAtNumber >= 0 ? updatedAtNumber : 0,
-    predictionCold: normalizeText(merged.predictionCold),
-    predictionHot: normalizeText(merged.predictionHot),
+    predictionCold: normalizePrediction(merged.predictionCold),
+    predictionHot: normalizePrediction(merged.predictionHot),
     predictionReason: normalizeText(merged.predictionReason),
     particleModelUnlocked: Boolean(merged.particleModelUnlocked),
     members: normalizeMembers(merged.members)
