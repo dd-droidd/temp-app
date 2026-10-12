@@ -89,7 +89,7 @@ const normalizeText = (value) => value == null ? '' : String(value);
 
 const normalizePrediction = (value) => {
   const text = normalizeText(value).trim();
-  const compact = text.replace(/\\s/g, '');
+  const compact = text.replace(/\s/g, '');
   return ['비슷하게유지된다', '온도변화가없다'].includes(compact)
     ? '온도 변화가 없다'
     : text;
