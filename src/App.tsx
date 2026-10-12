@@ -229,7 +229,7 @@ const GroupChart = ({ hotData, coldData, groupName }: { hotData: string[]; coldD
         color: '#333',
         font: {
             size: 18,
-            weight: '900',
+            weight: 900,
             family: "'Pretendard', 'Noto Sans KR', sans-serif"
         },
         padding: {
@@ -310,7 +310,7 @@ const GroupChart = ({ hotData, coldData, groupName }: { hotData: string[]; coldD
     datasets: [
       {
         label: '따뜻한 물',
-        data: hotData.map(v => (v === '' || isNaN(v) ? null : Number(v))),
+        data: hotData.map(v => (v === '' || !Number.isFinite(Number(v)) ? null : Number(v))),
         borderColor: '#ef4444', 
         backgroundColor: '#ef4444', 
         borderWidth: 3,         
@@ -323,7 +323,7 @@ const GroupChart = ({ hotData, coldData, groupName }: { hotData: string[]; coldD
       },
       {
         label: '차가운 물',
-        data: coldData.map(v => (v === '' || isNaN(v) ? null : Number(v))),
+        data: coldData.map(v => (v === '' || !Number.isFinite(Number(v)) ? null : Number(v))),
         borderColor: '#3b82f6', 
         backgroundColor: '#3b82f6', 
         borderWidth: 3,         
@@ -1365,7 +1365,7 @@ export default function App() {
           {Object.entries(groupData).filter(([groupId]) => viewMode === 'teacher' || groupId === studentGroup).map(([groupId, data]) => {
             const local = { elapsed: getElapsedSeconds(data) };
             const isTimerRunning = !!data.timerStartTime;
-            const style = GROUP_STYLES[(groupId - 1) % GROUP_STYLES.length];
+            const style = GROUP_STYLES[(Number(groupId) - 1) % GROUP_STYLES.length];
             const allFilled = isAllDataFilled(groupId);
             const isQuizDone = quizState[groupId];
 
