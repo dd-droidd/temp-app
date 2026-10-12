@@ -966,6 +966,8 @@ export default function App() {
 
     const current = normalizeGroup(Number(groupId), groupDataRef.current[groupId]);
     const pausedElapsed = Number(current.timerElapsed || 0);
+    // 8분에 도달한 타이머는 다시 시작하지 않고 교사가 초기화하도록 합니다.
+    if (pausedElapsed >= 480) return;
     const updatedAt = Date.now();
     const startTime = updatedAt - (pausedElapsed * 1000);
     const nextGroup = normalizeGroup(Number(groupId), {
@@ -977,9 +979,12 @@ export default function App() {
 
     setGroupData(updatedGroupData);
     groupDataRef.current = updatedGroupData;
+    const lastPassedTarget = TARGET_TIMES
+      .filter(target => target < 480 && target <= pausedElapsed)
+      .pop() ?? -1;
     setLocalTimers(prev => ({
       ...prev,
-      [groupId]: { elapsed: pausedElapsed, lastDingTime: -1 }
+      [groupId]: { elapsed: pausedElapsed, lastDingTime: lastPassedTarget }
     }));
     setClockTick(Date.now());
     await persistGroup(groupId, { timerStartTime: startTime, timerElapsed: pausedElapsed, timerUpdatedAt: updatedAt });
@@ -1414,10 +1419,10 @@ export default function App() {
                     <div className="flex items-center gap-2 flex-wrap justify-center">
                       <button
                         onClick={() => toggleTimer(groupId)}
-                        disabled={isTimerRunning}
+                        disabled={isTimerRunning || local.elapsed >= 480}
                         className="px-4 py-3 rounded-2xl text-sm font-extrabold shadow-md border-b-4 active:translate-y-1 active:border-b-0 transition-all bg-sky-400 text-white border-sky-600 hover:bg-sky-500 disabled:bg-slate-300 disabled:border-slate-400 disabled:cursor-not-allowed"
                       >
-                        ▶️ 시작
+                        {local.elapsed >= 480 ? '✅ 8분 완료' : '▶️ 시작'}
                       </button>
                       <button
                         onClick={() => stopTimer(groupId)}
