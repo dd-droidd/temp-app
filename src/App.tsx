@@ -637,6 +637,7 @@ export default function App() {
     }
 
     let unsubscribe = null;
+    let cancelled = false;
 
     try {
       const appName = `session-${normalizeSessionId(activeSession)}`;
@@ -646,10 +647,12 @@ export default function App() {
       dbRef.current = db;
 
       signInAnonymously(auth).then(() => {
+        if (cancelled) return;
         setIsConnected(true);
         const collRef = getGroupCollection(db, activeSession);
 
         unsubscribe = onSnapshot(collRef, (snapshot) => {
+          if (cancelled) return;
           const newData = { ...groupDataRef.current };
           const nextQuiz = {};
 
@@ -660,7 +663,9 @@ export default function App() {
             const incomingGroup = normalizeGroup(Number(id), incoming);
             const localTimerUpdatedAt = Number(local.timerUpdatedAt || 0);
             const incomingTimerUpdatedAt = Number(incomingGroup.timerUpdatedAt || 0);
-            const merged = normalizeGroup(Number(id), { ...local, ...incomingGroup });
+            // Only merge fields that actually exist in Firestore. Normalizing first would
+            // fill missing fields with defaults and could erase locally restored values.
+            const merged = normalizeGroup(Number(id), { ...local, ...incoming });
 
             // 타이머는 마지막으로 변경한 시각이 더 최신인 쪽을 사용합니다.
             if (localTimerUpdatedAt > incomingTimerUpdatedAt) {
@@ -688,14 +693,19 @@ export default function App() {
             );
           } catch (e) {}
         }, (error) => {
+          if (cancelled) return;
           console.error('Firebase 실시간 동기화 실패:', error);
           setIsConnected(false);
         });
-      }).catch(() => {
-        setIsConnected(false);
+      }).catch((error) => {
+        if (!cancelled) {
+          console.error('Firebase 로그인 실패:', error);
+          setIsConnected(false);
+        }
       });
 
       return () => {
+        cancelled = true;
         if (unsubscribe) unsubscribe();
         setIsConnected(false);
       };
@@ -789,7 +799,7 @@ export default function App() {
     }, 200);
 
     return () => clearInterval(interval);
-  }, [activeSession]);
+  }, [activeSession, isConnected]);
 
   const getElapsedSeconds = (data) => {
     if (!data) return 0;
@@ -829,6 +839,22 @@ export default function App() {
     await persistGroup(groupId, { particleModelUnlocked: true });
   };
 
+  const enqueueFirebaseWrite = async (groupId, targetSession, targetDb, payload, options = { merge: true }) => {
+    const previous = firebaseWriteQueuesRef.current[groupId] || Promise.resolve();
+    const nextWrite = previous
+      .catch(() => {})
+      .then(() => setDoc(getGroupDoc(targetDb, targetSession, groupId), payload, options));
+
+    firebaseWriteQueuesRef.current[groupId] = nextWrite;
+    try {
+      await nextWrite;
+    } finally {
+      if (firebaseWriteQueuesRef.current[groupId] === nextWrite) {
+        delete firebaseWriteQueuesRef.current[groupId];
+      }
+    }
+  };
+
   const persistGroup = async (groupId, groupValue, extra = {}) => {
     try {
       const next = { ...groupDataRef.current[groupId], ...groupValue };
@@ -842,28 +868,16 @@ export default function App() {
 
     if (!isConnected || !dbRef.current || !activeSession) return;
 
-    const targetSession = activeSession;
-    const targetDb = dbRef.current;
-    const payload = { ...groupValue, ...extra };
-    const previous = firebaseWriteQueuesRef.current[groupId] || Promise.resolve();
-
-    const nextWrite = previous
-      .catch(() => {})
-      .then(() => {
-        const docRef = getGroupDoc(targetDb, targetSession, groupId);
-        return setDoc(docRef, payload, { merge: true });
-      })
-      .catch((error) => {
-        console.error('Firebase 저장 실패:', error);
-      });
-
-    firebaseWriteQueuesRef.current[groupId] = nextWrite;
     try {
-      await nextWrite;
-    } finally {
-      if (firebaseWriteQueuesRef.current[groupId] === nextWrite) {
-        delete firebaseWriteQueuesRef.current[groupId];
-      }
+      await enqueueFirebaseWrite(
+        groupId,
+        activeSession,
+        dbRef.current,
+        { ...groupValue, ...extra },
+        { merge: true }
+      );
+    } catch (error) {
+      console.error('Firebase 저장 실패:', error);
     }
   };
 
@@ -1143,6 +1157,7 @@ export default function App() {
         const nextQuiz = { ...quizStateRef.current, [target]: false };
         groupDataRef.current = nextAll;
         quizStateRef.current = nextQuiz;
+        setQuizState(nextQuiz);
         setGroupData(nextAll);
 
         const nextLocalTimers = { ...localTimersRef.current, [target]: { elapsed: 0, lastDingTime: -1 } };
@@ -1156,11 +1171,16 @@ export default function App() {
           );
         } catch (e) {}
 
-        let syncFailed = false;
-        if (isConnected && dbRef.current) {
+        let syncFailed = !isConnected || !dbRef.current;
+        if (!syncFailed && dbRef.current) {
           try {
-            const docRef = getGroupDoc(dbRef.current, activeSession, target);
-            await setDoc(docRef, { ...initialGroup, quizCompleted: false }, { merge: false });
+            await enqueueFirebaseWrite(
+              target,
+              activeSession,
+              dbRef.current,
+              { ...initialGroup, quizCompleted: false },
+              { merge: false }
+            );
           } catch (e) {
             syncFailed = true;
           }
@@ -1185,14 +1205,19 @@ export default function App() {
         });
       }
 
-      let firebaseOk = true;
-      if (isConnected && dbRef.current) {
+      let firebaseOk = !!(isConnected && dbRef.current);
+      if (firebaseOk && dbRef.current) {
         try {
           await Promise.all(
             Array.from({ length: NUM_GROUPS }, (_, index) => {
-              const groupId = index + 1;
-              const docRef = getGroupDoc(dbRef.current, activeSession, groupId);
-              return setDoc(docRef, { ...versionedData[groupId], quizCompleted: false }, { merge: false });
+              const groupId = String(index + 1);
+              return enqueueFirebaseWrite(
+                groupId,
+                activeSession,
+                dbRef.current,
+                { ...versionedData[groupId], quizCompleted: false },
+                { merge: false }
+              );
             })
           );
         } catch (e) {
