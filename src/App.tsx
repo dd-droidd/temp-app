@@ -586,6 +586,7 @@ export default function App() {
   const [isResetting, setIsResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState('');
   const [resetTargetGroup, setResetTargetGroup] = useState<string | null>(null);
+  const [particleUnlockError, setParticleUnlockError] = useState<{ groupId: string; message: string } | null>(null);
   const [clockTick, setClockTick] = useState(Date.now());
 
   useEffect(() => {
@@ -850,6 +851,7 @@ export default function App() {
   const unlockParticleModel = async (groupId) => {
     if (viewMode !== 'teacher' || !isTeacherAuthenticated) return;
 
+    setParticleUnlockError(null);
     const current = groupDataRef.current[groupId] || createInitialGroup(Number(groupId));
     if (current.particleModelUnlocked) return;
 
@@ -857,7 +859,28 @@ export default function App() {
     const updatedGroupData = { ...groupDataRef.current, [groupId]: nextGroup };
     setGroupData(updatedGroupData);
     groupDataRef.current = updatedGroupData;
-    await persistGroup(groupId, { particleModelUnlocked: true });
+
+    const savedToFirebase = await persistGroup(groupId, { particleModelUnlocked: true });
+    if (!savedToFirebase) {
+      // 실패했는데도 공개 완료처럼 보이지 않도록 해당 모둠의 화면 상태를 되돌립니다.
+      const latest = groupDataRef.current[groupId] || nextGroup;
+      const revertedGroup = { ...latest, particleModelUnlocked: false };
+      const revertedData = { ...groupDataRef.current, [groupId]: revertedGroup };
+      groupDataRef.current = revertedData;
+      setGroupData(revertedData);
+      try {
+        window.localStorage.setItem(
+          getStorageKey(activeSession),
+          JSON.stringify({ data: revertedData, quiz: quizStateRef.current })
+        );
+      } catch (e) {}
+      setParticleUnlockError({
+        groupId,
+        message: isConnected && dbRef.current
+          ? '공개 설정을 저장하지 못했습니다. Firebase 저장 규칙을 확인한 뒤 다시 시도해 주세요.'
+          : '인터넷 연결이 없어 학생 화면에 공개되지 않았습니다. 연결 후 다시 시도해 주세요.'
+      });
+    }
   };
 
   const enqueueFirebaseWrite = async (groupId, targetSession, targetDb, payload, options = { merge: true }) => {
@@ -887,7 +910,7 @@ export default function App() {
       );
     } catch (e) {}
 
-    if (!isConnected || !dbRef.current || !activeSession) return;
+    if (!isConnected || !dbRef.current || !activeSession) return false;
 
     try {
       await enqueueFirebaseWrite(
@@ -897,8 +920,10 @@ export default function App() {
         { ...groupValue, ...extra },
         { merge: true }
       );
+      return true;
     } catch (error) {
       console.error('Firebase 저장 실패:', error);
+      return false;
     }
   };
 
@@ -1608,6 +1633,11 @@ export default function App() {
                     </button>
                   </div>
                 </div>
+                {viewMode === 'teacher' && particleUnlockError?.groupId === groupId && (
+                  <div role="alert" className="mx-5 mb-5 rounded-2xl border-2 border-rose-200 bg-rose-50 p-4 text-sm font-bold text-rose-700">
+                    ⚠️ {particleUnlockError.message}
+                  </div>
+                )}
 
                 {allFilled && (
                   <div className="mx-5 mb-5 p-4 rounded-2xl bg-slate-50 border-2 border-slate-200 flex items-center justify-between">
