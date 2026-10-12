@@ -1604,11 +1604,13 @@ export default function App() {
                     <div className="text-xs md:text-sm font-bold text-indigo-700 mt-1">
                       {viewMode === 'teacher'
                         ? (data.particleModelUnlocked
-                          ? '학생 화면에서도 이 모둠의 작은 알갱이 모형이 열려 있습니다.'
-                          : '이 모둠의 학생에게만 작은 알갱이 모형을 열어 줄 수 있습니다.')
-                        : (data.particleModelUnlocked
+                          ? '선생님이 이 모둠의 학생에게 모형을 공개했습니다.'
+                          : '공개 버튼을 누르면 측정이 끝나기 전에도 이 모둠의 학생이 볼 수 있습니다.')
+                        : data.particleModelUnlocked
                           ? '선생님이 작은 알갱이 모형을 열어 주셨습니다.'
-                          : '선생님이 열어 줄 때까지 잠겨 있습니다.')}
+                          : allFilled
+                            ? '온도 측정 기록이 모두 입력되어 잠금이 해제되었습니다.'
+                            : '온도 기록을 모두 입력하거나 선생님이 열어 주면 볼 수 있어요.'}
                     </div>
                   </div>
                   <div className="flex flex-wrap justify-center gap-2">
@@ -1627,14 +1629,14 @@ export default function App() {
                     )}
                     <button
                       type="button"
-                      disabled={viewMode !== 'teacher' && !data.particleModelUnlocked}
+                      disabled={viewMode !== 'teacher' && !allFilled && !data.particleModelUnlocked}
                       onClick={() => setActiveMoleculeGroup(groupId)}
                       className={'px-5 py-3 rounded-full font-black text-sm md:text-base shadow-md border-b-4 transition-all whitespace-nowrap ' +
-                        (viewMode === 'teacher' || data.particleModelUnlocked
+                        (viewMode === 'teacher' || allFilled || data.particleModelUnlocked
                           ? 'bg-indigo-500 hover:bg-indigo-600 text-white border-indigo-700 active:translate-y-1 active:border-b-0'
                           : 'bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed')}
                     >
-                      {viewMode === 'teacher' || data.particleModelUnlocked ? '🔓 작은 알갱이 모형 보기' : '🔒 선생님이 열어 주면 볼 수 있어요'}
+                      {viewMode === 'teacher' || allFilled || data.particleModelUnlocked ? '🔓 작은 알갱이 모형 보기' : '🔒 측정 완료 또는 선생님 공개 후 열림'}
                     </button>
                   </div>
                 </div>
