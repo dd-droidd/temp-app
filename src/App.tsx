@@ -742,13 +742,20 @@ export default function App() {
           const diff = Math.min(480, Math.max(0, Number.isFinite(rawDiff) ? rawDiff : 0));
           const nextTimer = { ...existing, elapsed: diff };
 
-          if (diff >= 480 && existing.lastDingTime !== 480) {
+          if (diff >= 480 && existing.lastDingTime < 480) {
             nextTimer.lastDingTime = 480;
             autoStopGroups.push(groupId);
             shouldPlayTada = true;
-          } else if (TARGET_TIMES.includes(diff) && existing.lastDingTime !== diff) {
-            nextTimer.lastDingTime = diff;
-            shouldPlayDing = true;
+          } else {
+            // 브라우저가 잠시 멈춰 목표 초를 건너뛰어도 알림이 빠지지 않게 합니다.
+            // 여러 목표 시간을 한꺼번에 지나간 경우에는 가장 최근 목표에 대해 한 번만 울립니다.
+            const latestPassedTarget = TARGET_TIMES
+              .filter(target => target < 480 && target <= diff)
+              .pop();
+            if (latestPassedTarget !== undefined && latestPassedTarget > existing.lastDingTime) {
+              nextTimer.lastDingTime = latestPassedTarget;
+              shouldPlayDing = true;
+            }
           }
 
           nextTimers[groupId] = nextTimer;
@@ -1613,6 +1620,13 @@ export default function App() {
           })}
         </div>
       </div>
+
+      {resetMessage && !showResetModal && (
+        <div role="status" className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[120] max-w-xl w-[calc(100%-2rem)] rounded-2xl bg-slate-900 text-white px-5 py-4 shadow-2xl flex items-center justify-between gap-4">
+          <span className="font-bold text-sm md:text-base">{resetMessage}</span>
+          <button type="button" onClick={() => setResetMessage('')} className="shrink-0 rounded-full bg-white/15 hover:bg-white/25 px-3 py-1.5 font-black text-sm">확인</button>
+        </div>
+      )}
 
       {showResetModal && (
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-[60] flex items-center justify-center p-4">
