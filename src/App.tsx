@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth, signInAnonymously } from "firebase/auth";
 import { getFirestore, doc, setDoc, collection, onSnapshot } from "firebase/firestore";
@@ -11,6 +11,7 @@ import {
   Title,
   Tooltip,
   Legend,
+  type ChartOptions,
 } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import ModeChooser from './ModeChooser';
@@ -130,10 +131,15 @@ const normalizeGroup = (i, value = {}) => {
   };
 };
 
+type GroupData = ReturnType<typeof createInitialGroup>;
+type GroupDataMap = Record<string, GroupData>;
+type LocalTimer = { elapsed: number; lastDingTime: number };
+type LocalTimerMap = Record<string, LocalTimer>;
+
 const createInitialState = () => {
-  const data = {};
-  const timers = {};
-  const quiz = {};
+  const data: GroupDataMap = {};
+  const timers: LocalTimerMap = {};
+  const quiz: Record<string, boolean> = {};
   for (let i = 1; i <= NUM_GROUPS; i++) {
     data[i] = createInitialGroup(i);
     timers[i] = { elapsed: 0, lastDingTime: -1 };
@@ -151,45 +157,53 @@ const GROUP_STYLES = [
   { icon: '🐹', color: 'bg-violet-100', borderColor: 'border-violet-300', textColor: 'text-violet-800' },
 ];
 
-let globalAudioCtx = null;
+let globalAudioCtx: AudioContext | null = null;
+
+const getAudioContext = (): AudioContext | null => {
+  if (globalAudioCtx) return globalAudioCtx;
+  const compatibleWindow = window as Window & { webkitAudioContext?: typeof AudioContext };
+  const AudioContextConstructor = window.AudioContext || compatibleWindow.webkitAudioContext;
+  if (!AudioContextConstructor) return null;
+  globalAudioCtx = new AudioContextConstructor();
+  return globalAudioCtx;
+};
 
 const playDing = (type = 'ding', silent = false) => {
   try {
-    if (!globalAudioCtx) {
-      globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    if (globalAudioCtx.state === 'suspended') globalAudioCtx.resume();
+    const context = getAudioContext();
+    if (!context) return;
+    if (context.state === 'suspended') void context.resume();
     if (silent) return; 
 
-    const osc = globalAudioCtx.createOscillator();
-    const gainNode = globalAudioCtx.createGain();
+    const osc = context.createOscillator();
+    const gainNode = context.createGain();
     
     osc.connect(gainNode);
-    gainNode.connect(globalAudioCtx.destination);
+    gainNode.connect(context.destination);
     
     if (type === 'ding') {
       osc.type = 'sine'; 
-      osc.frequency.setValueAtTime(880, globalAudioCtx.currentTime); 
-      osc.frequency.exponentialRampToValueAtTime(1760, globalAudioCtx.currentTime + 0.1);
-      gainNode.gain.setValueAtTime(0.5, globalAudioCtx.currentTime);
-      gainNode.gain.exponentialRampToValueAtTime(0.01, globalAudioCtx.currentTime + 0.5);
-      osc.start(globalAudioCtx.currentTime);
-      osc.stop(globalAudioCtx.currentTime + 0.5);
+      osc.frequency.setValueAtTime(880, context.currentTime); 
+      osc.frequency.exponentialRampToValueAtTime(1760, context.currentTime + 0.1);
+      gainNode.gain.setValueAtTime(0.5, context.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.01, context.currentTime + 0.5);
+      osc.start(context.currentTime);
+      osc.stop(context.currentTime + 0.5);
     } else if (type === 'tada') {
       osc.type = 'triangle';
-      osc.frequency.setValueAtTime(523.25, globalAudioCtx.currentTime); 
-      osc.frequency.setValueAtTime(659.25, globalAudioCtx.currentTime + 0.15); 
-      osc.frequency.setValueAtTime(783.99, globalAudioCtx.currentTime + 0.3); 
-      gainNode.gain.setValueAtTime(0.3, globalAudioCtx.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0, globalAudioCtx.currentTime + 0.6);
-      osc.start(globalAudioCtx.currentTime);
-      osc.stop(globalAudioCtx.currentTime + 0.6);
+      osc.frequency.setValueAtTime(523.25, context.currentTime); 
+      osc.frequency.setValueAtTime(659.25, context.currentTime + 0.15); 
+      osc.frequency.setValueAtTime(783.99, context.currentTime + 0.3); 
+      gainNode.gain.setValueAtTime(0.3, context.currentTime);
+      gainNode.gain.linearRampToValueAtTime(0, context.currentTime + 0.6);
+      osc.start(context.currentTime);
+      osc.stop(context.currentTime + 0.6);
     }
   } catch (e) {}
 };
 
-const GroupChart = ({ hotData, coldData, groupName }) => {
-  const options = {
+const GroupChart = ({ hotData, coldData, groupName }: { hotData: string[]; coldData: string[]; groupName: string }) => {
+  const options: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -344,7 +358,7 @@ const moleculeColor = (start, progress) => {
   return `rgb(${Math.round(lerp(start[0], gray[0], progress))}, ${Math.round(lerp(start[1], gray[1], progress))}, ${Math.round(lerp(start[2], gray[2], progress))})`;
 };
 
-const ParticleEquilibriumModal = ({ groupName, onClose }) => {
+const ParticleEquilibriumModal = ({ groupName, onClose }: { groupName: string; onClose: () => void }) => {
   const [progress, setProgress] = useState(0);
   const [restartKey, setRestartKey] = useState(0);
   const positionsRef = useRef(
@@ -537,15 +551,15 @@ const ParticleEquilibriumModal = ({ groupName, onClose }) => {
 };
 
 export default function App() {
-  const [groupData, setGroupData] = useState({});
-  const [localTimers, setLocalTimers] = useState({});
-  const firebaseWriteQueuesRef = useRef({});
-  const localTimersRef = useRef({});
-  const [quizState, setQuizState] = useState({});
-  const quizStateRef = useRef({});
-  const groupDataRef = useRef({}); 
+  const [groupData, setGroupData] = useState<GroupDataMap>({});
+  const [localTimers, setLocalTimers] = useState<LocalTimerMap>({});
+  const firebaseWriteQueuesRef = useRef<Record<string, Promise<unknown>>>({});
+  const localTimersRef = useRef<LocalTimerMap>({});
+  const [quizState, setQuizState] = useState<Record<string, boolean>>({});
+  const quizStateRef = useRef<Record<string, boolean>>({});
+  const groupDataRef = useRef<GroupDataMap>({}); 
   const [isConnected, setIsConnected] = useState(false);
-  const dbRef = useRef(null);
+  const dbRef = useRef<import('firebase/firestore').Firestore | null>(null);
   const [viewMode, setViewMode] = useState('');
   const [studentGroup, setStudentGroup] = useState('1');
   const [chooserMode, setChooserMode] = useState('');
@@ -563,15 +577,15 @@ export default function App() {
   const [showRoleModal, setShowRoleModal] = useState(false); 
   const [selectedRoleGroup, setSelectedRoleGroup] = useState('1'); 
   const [hasAgreedSafety, setHasAgreedSafety] = useState(false);
-  const [activeQuizGroup, setActiveQuizGroup] = useState(null);
-  const [activeMoleculeGroup, setActiveMoleculeGroup] = useState(null);
+  const [activeQuizGroup, setActiveQuizGroup] = useState<string | null>(null);
+  const [activeMoleculeGroup, setActiveMoleculeGroup] = useState<string | null>(null);
   const [quizAnswers, setQuizAnswers] = useState({ ans1: '', ans2: '' });
   const [quizFeedback, setQuizFeedback] = useState('');
-  const [pendingTimerGroup, setPendingTimerGroup] = useState(null);
+  const [pendingTimerGroup, setPendingTimerGroup] = useState<string | null>(null);
   const [showResetModal, setShowResetModal] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [resetMessage, setResetMessage] = useState('');
-  const [resetTargetGroup, setResetTargetGroup] = useState(null);
+  const [resetTargetGroup, setResetTargetGroup] = useState<string | null>(null);
   const [clockTick, setClockTick] = useState(Date.now());
 
   useEffect(() => {
@@ -921,8 +935,8 @@ export default function App() {
 
   const startRealTimer = async (groupId) => {
     try {
-      if (!globalAudioCtx) globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      if (globalAudioCtx.state === 'suspended') globalAudioCtx.resume();
+      const context = getAudioContext();
+      if (context?.state === 'suspended') void context.resume();
     } catch(e) {}
 
     const current = normalizeGroup(Number(groupId), groupDataRef.current[groupId]);
@@ -1054,8 +1068,8 @@ export default function App() {
 
   const startSelectedMode = async () => {
     try {
-      if (!globalAudioCtx) globalAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      if (globalAudioCtx.state === 'suspended') await globalAudioCtx.resume();
+      const context = getAudioContext();
+      if (context?.state === 'suspended') await context.resume();
     } catch (e) {}
 
     const session = normalizeSessionId(chooserSession);
